@@ -1,0 +1,962 @@
+/* Provide hints for Tamarin's heuristics.  In this case, we tell
+   Tamarin to delay (make "Last", "L_") finding the sources for the
+   LogDevice fact, since it doesn't provide useful information and can
+   lead to non-termination. It is similar for LogCloud, but the trace
+   is found faster if we don't use L_ for that. */
+
+/* In this proof, we use several abstractions. For example, we treat
+   our log structure as a list to record simplified data item. */
+
+
+theory DTKI_protocol_correctness
+
+/* Author: Jiangshan Yu */
+
+/*
+    =======Entity=======
+
+    - Certificate log maintainers (CLM), who maintains a database of
+      all valid and invalid (e.g. expired or revoked) certificates for
+      a particular set of domains for which it is responsible.
+
+    - Mapping log maintainer (MLM), who maintains a mapping log
+      recording associations between certificate logs and the domains
+      they are responsible for.
+
+    - Certificate authorities (CA) check the identity of domain
+      owners, and create certificates for the domain owners'
+      keys. However, in contrast with today's CAs, the ability of CAs
+      in DTKI is limited since the issuance of a certificate from a CA
+      is not enough to convince web browsers to accept the certificate
+      (proof of presence in the relevant CLM is also needed).
+
+
+    =======Adversary model=======
+
+    We consider an adversary who can compromise the private key of all
+    infrastructure servers in DTKI. In other words, the adversary can
+    collude with all log servers and certificate authorities to launch
+    attacks. In addition, we assume that each domain server can
+    securely setup a master key with the corresponding CLM, and will
+    be able to keep the master key private.
+
+    =======Protocol=======
+
+   In DTKI, each domain owner has two types of certificate, namely TLS
+   certificate and master certificate. Domain owners can have
+   different TLS certificates but can only have one master
+   certificate.  A TLS certificate contains the public key of a domain
+   server for a TLS connection, whereas the master certificate
+   contains a public key, called "master verification key". The
+   corresponding secret key of the master certificate is called
+   "master signing key". The master signing key is only used to
+   validate a TLS certificate (of the same subject) by issuing a
+   signature on it. This limits the ability of certificate authorities
+   since without having a valid signature (issued by using the master
+   signing key), the TLS certificate will not be accepted.  Hence, the
+   TLS secret key is the one for daily use; and the master signing key
+   is rarely used. It will only be used for validating a new
+   certificate, or revoke an existing certificate. We assume that
+   domain owners can take care of their master signing key.
+
+   After a domain owner obtains a master certificate or a TLS
+   certificate from a CA, he needs to make a registration request to
+   the corresponding CLM to publish the certificate into the log. To
+   do so, the domain owner signs the certificate using the master
+   signing key, and submits the signed certificate to a CLM determined
+   (typically based on the top-level domain) by the MLM. The CLM
+   checks the signature, and accepts the certificate by adding it to
+   the certificate log if the signature is valid. The process of
+   revoking a certificate is handled similarly to the process of
+   registering a certificate in the log.
+
+   When establishing a secure connection with a domain server, the
+   browser receives a corresponding certificate and proofs from a
+   mirror of the MLM and a CLM, and verifies the certificate, the
+   proof that the certificate is valid and recorded in the certificate
+   log, and proof that this certificate log is authorised to manage
+   certificates for the domain. Users and their browsers only accept a
+   certificate if the certificate is issued by a CA, and validated by
+   the domain owner, and current in the certificate log.
+
+   Fake master certificates or TLS certificates can be easily detected
+   by the domain owner, because the CA will have had to insert such
+   fake certificates into the log (in order to be accepted by
+   browsers), and is thus visible to the domain owner.
+
+   Rather than relying on trusted parties (e.g. monitors in CT and
+   validators in AKI) to verify the healthiness of logs and the
+   relations between logs, DTKI uses a crowdsourcing-like way to
+   ensure the integrity of the log and the relations between mapping
+   log and a certificate log, and between certificate logs. In
+   particular, the monitoring work in DTKI can be broken into
+   independent little pieces, and thus can be done by distributing the
+   pieces to users' browsers. In this way, users' browsers can perform
+   randomly-chosen pieces of the monitoring role in the background
+   (e.g. once a day). Thus, web users can collectively monitor the
+   integrity of the logs. We omit the crowdsourced verification in our
+   Tarmarin-prover code, as they have been analysied in our report.
+
+   To avoid the case that attackers create a "bubble" (i.e. an
+   isolated environment) around a victim, we share the same assumption
+   as other existing protocols (e.g.  CT and ECT) -- we assume that
+   gossip protocols are used to disseminate digests of the log. So,
+   users of logs can detect if a log maintainer shows different
+   versions of the log to different sets of users. Since log
+   maintainers sign and time-stamp their digests, a log maintainer
+   that issues inconsistent digests can be held accountable.
+
+    =======Notes=======
+
+    Rule name: All capital, with '_' to separate words, e.g. RULE_NAME
+
+    Actions: First letter is capital, with '_' to separate words,
+    e.g. Action_Name
+
+    State facts: Eg, 'StSecureCommA1' start with 'St', ends in role name
+    and step in role that outputs it. By convention, the first argument
+    is the thread identifier (tid), freshly generated in the first step
+    of the role.
+
+    Conclusion: First letter is capital, without '_',
+    e.g. ConclusionName
+
+    Lemma and axiom: lower case letter only, with '_' to separate
+    words, e.g.lemma_name
+
+*/
+
+//theory DTKI
+begin
+
+builtins: multiset
+
+functions: adec/2, aenc/2, fst/1, h/1, pair/2, pk/1, sdec/2, senc/2,
+  sign/2, snd/1, false/0, true/0, verify/3
+equations:
+    adec(aenc(x.1, pk(x.2)), x.2) = x.1,
+    fst(<x.1, x.2>) = x.1,
+    sdec(senc(x.1, x.2), x.2) = x.1,
+    snd(<x.1, x.2>) = x.2,
+    verify(sign(x.1, x.2), x.1, pk(x.2)) = true
+
+
+/*Initialisation: Mapping log maintainer. */
+
+rule INIT_MLM:
+    [ Fr(~ltkM) ]
+  --[ Is_Type('MLM', $M),
+      Only_One('INITMLM') // The MLM is unique in DTKI
+    ]->
+    [
+      !Ltk($M, ~ltkM),
+      !Pk($M, pk(~ltkM)),
+      Out(pk(~ltkM))
+    ]
+
+/*Initialisation: Certificate log maintainer CLM1. */
+
+rule INIT_CLM_RGX_1:
+    [ Fr(~ltkC) ]
+  --[ Is_Type('CLM', $C),
+      Only_One('INITCLM_RGX_1') // We only allow two CLMs in this
+                                // proof, it can be extended to many
+                                // CLMs. We predefined two regular
+                                // expressions, namely RGX1 and RGX2,
+                                // and each CLM is authorised for
+                                // either of them. This one is
+                                // authorised for regular expression
+                                // 1.
+    ]->
+    [ !Ltk($C, ~ltkC),
+      !Pk($C, pk(~ltkC)),
+      Rgx($C, pk(~ltkC), 'RGX1'),
+      StStateInitCLM($C, pk(~ltkC), 'RGX1'),
+      Out(pk(~ltkC))
+    ]
+
+/*Initialisation: Certificate log maintainer CLM2. */
+
+rule INIT_CLM_RGX_2:
+    [ Fr(~ltkC) ]
+  --[ Is_Type('CLM', $C),
+      Only_One('INITCLM_RGX_2') // We only allow two CLMs in this
+                                // proof, it can be extended to many
+                                // CLMs. We predefined two regular
+                                // expressions, namely RGX1 and RGX2,
+                                // and each CLM is authorised for
+                                // either of them. This one is
+                                // authorised for regular expression
+                                // 2.
+    ]->
+    [ !Ltk($C, ~ltkC),
+      !Pk($C, pk(~ltkC)),
+      Rgx($C, pk(~ltkC), 'RGX2'),
+      StStateInitCLM($C, pk(~ltkC), 'RGX2'),
+      Out(pk(~ltkC))
+    ]
+
+/*Initialisation: Mapping log. */
+
+rule INIT_MLOG:
+     [
+      !Ltk($M, ltkM),
+      Fr(~mlogid)
+     ]
+   --[ Is_Type('MLM', $M),
+       Only_One('INITMLOG') // Each log maintainer has only one log.
+     ]->
+     [
+      L_Mlog($M, ~mlogid, 'nil') // 'nil' is just a normal constant,
+                                 // has no meaning here. I use this
+                                 // constant to fill this position
+                                 // while no record is available.
+     ]
+
+
+/*Initialisation: Certificate log. */
+
+rule INIT_CLOG_RGX1:
+     [
+      !Ltk($C, ltkC),
+      StStateInitCLM($C, pk(ltkC), 'RGX1'),
+      Fr(~clogid)
+     ]
+   --[ Is_Type('CLM', $C),
+       Only_One('CLOG1') // Each log maintainer has only one log.
+     ]->
+     [
+      L_Clog($C, ~clogid, 'RGX1', 'nil') // the log maintained by the
+                                          // CLM is for domains whose
+                                          // name is an instence of
+                                          // regular expression RGX1
+     ]
+
+rule INIT_CLOG_RGX2:
+     [
+      !Ltk($C, ltkC),
+      StStateInitCLM($C, pk(ltkC), 'RGX2'),
+      Fr(~clogid)
+     ]
+   --[ Is_Type('CLM', $C),
+       Only_One('CLOG2') // Each log maintainer has only one log.
+     ]->
+     [
+      L_Clog($C, ~clogid, 'RGX2', 'nil') // the log maintained by the
+                                         // CLM is for domains whose
+                                         // name is an instence of
+                                         // regular expression RGX2
+     ]
+
+  /* Adding a new Clog into Mlog. Phase 1, a CLM sends a request to the MLM.*/
+
+  rule MLOG_ADD_NEW_CLOG_PHASE_1_CLM:
+          let Request = sign(<'AddCLMRequest', $C, clogid, rgx, pk(ltkC)>, ltkC)
+  in
+          [
+           !Ltk($C, ltkC),
+           Rgx($C, pk(ltkC), rgx),
+           L_Clog($C, clogid, rgx, clog)
+          ]
+        --[
+           Is_Type('CLM', $C)
+          ]->
+          [
+           L_Clog($C, clogid, rgx, clog),
+           Out(Request)
+          ]
+
+  /* Adding a new Clog into Mlog. Phase 2, the MLM records the verified request in the mlog.*/
+
+  rule MLOG_ADD_NEW_CLOG_PHASE_2_MLM:
+          let
+          Request = sign(<'AddCLMRequest', $C, clogid, rgx, ltpkC>, ltkC)
+          Proof_MLM = sign( <'AddedByMLM', $C, clogid, rgx, ltpkC>, ltkM)
+            in
+  [
+      In(Request),
+      !Ltk($M, ltkM),
+      !Pk($C, ltpkC),
+      L_Mlog($M, mlogid, mlog)
+  ]
+  --[
+     Is_Type('CLM', $C),
+     Is_Type('MLM', $M),
+     Eq(verify(Request, <'AddCLMRequest', $C, clogid, rgx, ltpkC>, ltpkC), true ),
+     Eq(ltpkC,pk(ltkC)),
+     Start_Role(<'MANCP2M','M',rgx>, <$M,$C,rgx>) // To find the basic
+                                                  // trace and spead
+                                                  // up the proof, we
+                                                  // only have one
+                                                  // instance of each
+                                                  // role.
+     ]->
+    [
+     L_Mlog($M, mlogid, mlog + <$C, clogid, rgx, ltpkC>),
+     Out(Proof_MLM)
+    ]
+
+  /* The MLM can modify its own log */
+  
+  rule MODIFY_MLOG:
+let record = <$C, clogid, rgx, ltpkC>
+  in
+          [
+           In(record),
+           !Ltk($M, ltkM),
+           StCompromisedMLM($M,ltkM),//only malicious log maintainer
+                                     //would modify logs in this way.
+           L_Mlog($M, mlogid, mlog)
+           ]
+         --[
+            Is_Type('CLM', $C),
+            Is_Type('MLM', $M),
+            Modify_Mlog($M, mlogid, ltkM)
+           ]->
+           [L_Mlog($M, mlogid, mlog + record)]
+
+
+  /* Adding a new Clog into Mlog. Phase 3, generating a proof for
+     convincing other participants. This also enables a malicious MLM
+     to create any fake proof about the mlog.*/
+
+  rule MLOG_ADD_NEW_CLOG_PHASE_3_CLM:
+   let
+          Proof_MLM = sign( <'AddedByMLM', $C, clogid, rgx, ltpkC>, ltkM)
+   in
+
+    [
+     In(Proof_MLM),
+     !Pk($M,ltpkM)
+    ]
+  --[
+     Is_Type('CLM', $C),
+     Is_Type('MLM', $M),
+     Eq(verify(Proof_MLM, <'AddedByMLM', $C, clogid, rgx, ltpkC>, ltpkM), true )
+    ]->
+    [
+     !Mapping(Proof_MLM)
+    ]
+
+  /* Initialisation: Certificate authorities*/
+
+  rule INIT_CA:
+  [ Fr(~ltkCA) ]
+  --[
+     Is_Type('CA', $CA),
+     Only_One('CA')
+     ]->
+
+  [ !Ltk($CA, ~ltkCA),
+    !Pk($CA, pk(~ltkCA)),
+    Out(pk(~ltkCA))
+  ]
+
+
+  /* Compromise a CA */
+
+  rule COMPROMISE_CA:
+          [ !Ltk($CA, ltkCA)
+          ]
+  --[
+     Is_Type('CA', $CA),
+     Compromise_CA($CA,ltkCA)
+     ]->
+
+  [
+   Out(ltkCA)
+  ]
+  
+  /* Compromise the MLM */
+
+  rule COMPROMISE_MLM:
+          [ !Ltk($M, ltkM)
+            ]
+  --[
+     Is_Type('MLM', $M),
+     Compromise_MLM($M,ltkM)
+     ]->
+
+  [
+   Out(ltkM),
+   StCompromisedMLM($M,ltkM)
+    ]
+
+  /* Compromise a CLM */
+
+  rule COMPROMISE_CLM:
+          [ !Ltk($C, ltkC)
+          ]
+  --[
+     Is_Type('CLM', $C),
+     Compromise_CLM($C,ltkC)
+     ]->
+
+  [
+   Out(ltkC),
+   StCompromisedCLM($C,ltkC)
+  ]
+
+/*Initialisation: domain server Did, s.t. Did is an instance of RGX1. */
+
+rule INIT_DOMAIN_RGX1:
+     [ Fr(~ltkD),
+       Fr(~Did)
+     ]
+  --[ Is_Type('Domain', $D)]->
+  [ !Ltk($D, ~ltkD),
+    !Pk($D, pk(~ltkD)),
+    !DomainInfo($D, ~Did, 'RGX1', pk(~ltkD)),
+    L_LocalRecord($D, ~Did, 'RGX1', 'nil'),
+    MasterKey($D, ~Did, 'RGX1', pk(~ltkD)),
+    Out(pk(~ltkD))
+    ]
+
+/*Initialisation: domain server Did, s.t. Did is an instance of RGX2. */
+
+rule INIT_DOMAIN_RGX2:
+     [ Fr(~ltkD),
+       Fr(~Did)
+     ]
+  --[ Is_Type('Domain', $D)]->
+  [ !Ltk($D, ~ltkD),
+    !Pk($D, pk(~ltkD)),
+    !DomainInfo($D, ~Did, 'RGX2', pk(~ltkD)),
+    L_LocalRecord($D, ~Did, 'RGX2', 'nil'),
+    MasterKey($D, ~Did, 'RGX2', pk(~ltkD)),
+    Out(pk(~ltkD))
+    ]
+
+  /* Request a master certificate from CAs */
+rule REQUEST_MASTER_CERT:
+          let request= <'RequestMasterCert', $D, Did, rgx, ltpkD>
+            in
+     [
+      !DomainInfo($D, Did, rgx, ltpkD),
+      MasterKey($D, Did, rgx, ltpkD)
+     ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA)
+     ]->
+    [
+     Out(request)
+    ]
+
+
+  /* CA certifies a master key. The verification of domain name and
+     key is done by linking !Pk($D, ltpkD) to the ($D, ltpkD) in the
+     request.*/
+rule CREATE_MASTER_CERT_PHASE_1:
+  let request= <'RequestMasterCert', $D, Did, rgx, ltpkD>
+      Cert_M= sign( <'MasterCert', $D, Did, rgx, ltpkD>, ltkCA)
+  in
+     [
+      In(request),
+      !Ltk($CA, ltkCA),
+      !Pk($D, ltpkD)
+     ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA),
+     Start_Role(<'CMCP','CA'>,<$CA, $D>)
+     ]->
+    [
+     Out(Cert_M)
+    ]
+  
+  /* If a statement is signed by a CA, then this is a certificate. The
+     reason that we dont put !MasterCert(Cert_M) in the last rule,
+     namely CREATE_MASTER_CERT_PHASE_1, is that the last rule would have to
+     link the certificate to the real pk since !Pk is used. However,
+     in the real world, a CA is able to certify any public key. Thus
+     we have this extra rule to give the CA's ability to certify any
+     pk for any domain.*/
+  rule CREATE_MASTER_CERT_PHASE_2:
+   let
+       Cert_M= sign( <'MasterCert', $D, Did, rgx, ltpkD>, ltkCA)
+   in
+
+    [
+     In(Cert_M),
+     !Pk($CA,ltpkCA)
+    ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA),
+     Eq(ltpkCA,pk(ltkCA)),
+     Eq(verify(Cert_M, <'MasterCert', $D, Did, rgx, ltpkD>, ltpkCA), true )
+    ]->
+    [!MasterCert(Cert_M)]
+
+/*Generate TLS keys. Any domain owner with a secret key corresponding
+  to a master certificate can issue TLS certificates.*/
+
+rule UPDATE_DOMAIN_TLSKEY_PHASE_1:
+  let
+    Cert_M= sign( <'MasterCert', $D, Did, rgx, ltpkD>, ltkCA)
+    Cert_TLS=sign( <'TLSCert', $D, Did, rgx, ltpkD, pk(~stkD)>, ltkD)
+  in
+     [ !Ltk($D, ltkD),
+       !MasterCert(Cert_M),
+       L_LocalRecord($D, Did, rgx, record),
+       Fr(~stkD) // a new short term (TLS) key
+       ]
+   --[ Is_Type('Domain', $D),
+       D_Key($D, Did, rgx, ltkD, ~stkD),
+       Eq(pk(ltkD),ltpkD),
+       Start_Role(<'UDTP','D',rgx>, <$D,$C>)
+     ]->
+     [!Stk($D, Did, ~stkD),
+      L_LocalRecord($D, Did, rgx, record+<$D, Did, ltpkD, pk(~stkD)>),
+      Out(Cert_TLS),
+      Out(pk(~stkD))
+     ]
+
+/*For the reason similar to generating master certificates, we have
+  two phases for enabling anyone who has the secret corresponding to a
+  master certificate to generate TLS certificates.*/
+
+rule UPDATE_DOMAIN_TLSKEY_PHASE_2:
+  let
+    Cert_M= sign( <'MasterCert', $D, Did, rgx, ltpkD>, ltkCA)
+    Cert_TLS=sign( <'TLSCert', $D, Did, rgx, ltpkD, stpkD>, ltkD)
+  in
+    [In(Cert_TLS),
+     !MasterCert(Cert_M),
+     !Pk($CA,ltpkCA)
+     ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA),
+     Eq(ltpkCA,pk(ltkCA)),
+     Eq(ltpkD, pk(ltkD))
+     ]->
+  [!TLSCert(Cert_TLS)]
+
+
+  /* To publish domain information into clog, a domain first needs to
+     query the mapping. This can be done by supplying the Proof_MLM
+     directly. */
+
+  rule REQUEST_MAPPING_DOMAIN:
+          let Request = <'MappingRequest', rgx, ~n>
+  in
+          [
+           Fr(~n),
+           !DomainInfo($D, Did, rgx, ltpkD)
+          ]
+        --[
+           Is_Type('Domain', $D),
+           Start_Role(<'RMD','D',rgx>,<$D,rgx>)
+          ]->
+          [
+           StAskMapping(Request),
+           Out(Request)
+          ]
+
+  rule PROVE_MAPPING:
+  let
+          Request = <'MappingRequest', rgx, n>
+  Proof_MLM = sign( <'AddedByMLM', $C, clogid, rgx, ltpkC, n>, ltkM)
+
+  in
+   [
+      In(Request),
+      !Ltk($M, ltkM),
+      !Mapping(Proof_MLM)
+  ]
+  --[
+     Is_Type('CLM', $C),
+     Is_Type('MLM', $M),
+     Start_Role(<'PM','M',rgx>,<$M,$D,rgx>)
+     ]->
+    [
+     Out(Proof_MLM)
+    ]
+
+
+  rule UP_CLOG_ADD_PHASE_1_Domain:
+
+   let
+          Request1 = <'MappingRequest', rgx, n>
+    Cert_M= sign( <'MasterCert', $D, Did, rgx, pk(ltkD)>, ltkCA)
+  Cert_TLS=sign( <'TLSCert', $D, Did, rgx, ltpkD, stpkD>, ltkD)
+  Request2=<'AddDomainRequest', Cert_M, Cert_TLS>
+  Proof_MLM = sign( <'AddedByMLM', $C, clogid, rgx, ltpkC, n>, ltkM)
+
+   in
+  [
+   StAskMapping(Request1),
+   In(Proof_MLM),
+   !Pk($M,ltpkM),//It is built into browsers.
+   !MasterCert(Cert_M),
+   !TLSCert(Cert_TLS),
+   L_Mlog($M, mlogid, mlog)
+  ]
+  --[
+     Is_Type('MLM', $M),
+     Is_Type('CLM', $C),
+     Eq(verify(Proof_MLM, <'AddedByMLM', $C, clogid, rgx, ltpkC, n>, ltpkM), true ),
+     IsIn(<$C, clogid, rgx, ltpkC>, mlog)
+    ]->
+  [
+   Out(Request2),
+   L_Mlog($M, mlogid, mlog)
+  ]
+
+   rule UP_CLOG_ADD_PHASE_2_CLM:
+
+          let
+  Cert_M= sign( <'MasterCert', $D, Did, rgx, ltpkD>, ltkCA)
+  Cert_TLS=sign( <'TLSCert', $D, Did, rgx, ltpkD, stpkD>, ltkD)
+  Request2=<'AddDomainRequest', Cert_M, Cert_TLS>
+  Proof_MLM = sign( <'AddedByMLM', $C, clogid, rgx, ltpkC>, ltkM)
+  Proof_CLM= sign( <'AddedByCLM', Cert_M, Cert_TLS>, ltkC)
+   in
+
+  [
+   In(Request2),
+   !Ltk($C, ltkC),
+   !Pk($CA, ltpkCA),
+   !Pk($M, ltpkM),
+   !Mapping(Proof_MLM),
+   L_Clog($C, clogid, rgx, clog)
+   ]
+  --[ Is_Type('Domain', $D),
+      Is_Type('CLM', $C),
+      Is_Type('MLM', $M),
+      Eq(ltpkC, pk(ltkC)),
+      Eq(verify(Cert_M, <'MasterCert', $D, Did, rgx, ltpkD>, ltpkCA), true),
+      Eq(verify(Cert_TLS, <'TLSCert', $D, Did, rgx, ltpkD, stpkD>, ltpkD), true),
+      Eq(verify(Proof_MLM, <'AddedByMLM', $C, clogid, rgx, ltpkC>, ltpkM), true ),
+      Start_Role(<'UCAP','C',rgx>, <$D,$C>)
+      ]->
+  [
+   L_Clog($C, clogid, rgx, clog + <$D, Did, ltpkD, stpkD>),
+   Out(Proof_CLM)
+  ]
+
+  /* A CLM can modify its own log */
+    rule MODIFY_CLOG:
+let record = <$D, Did, ltpkD, stpkD>
+  in
+          [
+           In(record),
+           !Ltk($C, ltkC),
+           StCompromisedCLM($C,ltkC),//only malicious log maintainer
+                                     //would modify logs in this way.
+           L_Clog($C, clogid, rgx, clog)
+           ]
+         --[
+            Is_Type('Domain', $D),
+            Is_Type('CLM', $C),
+            Modify_Clog($C, clogid, rgx, ltkC)
+            ]->
+           [L_Clog($C, clogid, rgx, clog + record)]
+
+  /* The CLM can provide fake information about Domains*/
+  rule UP_CLOG_ADD_2:
+   let
+      Cert_M= sign( <'MasterCert', $D, Did, rgx, pk(ltkD)>, ltkCA)
+  Proof_CLM= sign( <'AddedByCLM', Cert_M, Cert_TLS>, ltkC)
+   in
+  [
+   In(Proof_CLM),
+   !Pk($C,ltpkC)
+  ]
+  --[
+     Is_Type('CLM', $C),
+     Eq(verify(Proof_CLM, <'AddedByCLM',  Cert_M, Cert_TLS>, ltpkC), true )
+    ]->
+  [!TLS_Cert_In_Clog(Proof_CLM)]
+
+  /* Start secure communication */
+
+  rule SECURE_COMMUNICATION_USER_1:
+          let
+      Cert_M= sign( <'MasterCert', $D, Did, rgx, ltpkD>, ltkCA)
+      Cert_TLS=sign( <'TLSCert', $D, Did, rgx, ltpkD, stpkD>, ltkD)
+      Proof_MLM = sign( <'AddedByMLM', $C, clogid, rgx, ltpkC>, ltkM)
+  Proof_CLM= sign( <'AddedByCLM', Cert_M, Cert_TLS>, ltkC)
+  in
+    [
+     Fr(~n),
+     !Pk($C, ltpkC),
+     !Pk($M,ltpkM),
+     !MasterCert(Cert_M),//if the random verification is successfully
+                         //verified with positive result, then all
+                         //users will see the same master certificate
+                         //of the same domain.
+     !Mapping(Proof_MLM),
+     !TLS_Cert_In_Clog(Proof_CLM),
+     L_Clog($C, clogid, rgx, clog),
+     L_Mlog($M, mlogid, mlog)
+     ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CLM', $C),
+     Is_Type('MLM', $M),
+     Eq(verify(Proof_MLM, <'AddedByMLM', $C, clogid, rgx, pk(ltkC)>, ltpkM), true ),
+     Eq(verify(Proof_CLM, <'AddedByCLM', Cert_M, Cert_TLS>, ltpkC), true ),
+     Eq(verify(Cert_TLS, <'TLSCert', $D, Did, rgx, ltpkD, stpkD>, ltpkD), true ),
+     IsIn(<$D, Did, ltpkD, stpkD>, clog),
+     IsIn(<$C, clogid, rgx, ltpkC>, mlog),
+     Start_Role(<'SCU','U'>,<$D>)
+     ]->
+     [
+      Out(aenc{'1', ~n}stpkD),
+      StSend($D, Did, ~n, rgx, ltpkD, stpkD),
+      L_Clog($C, clogid, rgx, clog),
+      L_Mlog($M, mlogid, mlog)
+     ]
+
+  rule SECURE_COMMUNICATION_DOMAIN_1:
+          let m=aenc{'1', n}stpk
+              Cert_TLS=sign( <'TLSCert', $D, Did, rgx, ltpkD, stpkD>, ltkD)
+          in
+    [
+     In(m),
+     !Stk($D, Did, stkD),
+     !Ltk($D, ltkD),
+     !TLSCert(Cert_TLS)
+     ]
+  --[
+     Is_Type('Domain', $D),
+     Eq(fst(adec(m, stkD)), '1'),
+     Start_Role(<'SCD','D'>,<$D>)
+     ]->
+     [
+      Out( h(snd(adec(m, stkD))) )
+      ]
+
+rule SECURE_COMMUNICATION_USER_2:
+  [ StSend($D, Did, n, rgx, ltpkD, stpkD),
+    In( h(n) )       // Receive hashed secret from network
+    ]
+  --[ Com_Done($D, Did, n, rgx, ltpkD, stpkD) ]-> // State that the secret 'n' was sent to domain $D
+    [
+     StDone($D, Did, n, rgx, ltpkD, stpkD)
+     ]
+
+  /* Domain owners should verify that their master certificate are
+     correctly recorded in the log */
+
+  rule DOMAIN_CHECK_MASTER_CERTIFICATE:
+let
+  Cert_M= sign( <'MasterCert', $D, Did, rgx, pk(ltkD)>, ltkCA)
+  in
+  [
+   !Pk($D,ltpkD),
+   !MasterCert(Cert_M),
+   !DomainInfo($D, Did, rgx, ltpkD)
+   ]
+  --[
+     Is_Type('Domain', $D),
+     Eq(pk(ltkD),ltpkD),
+     VerifiedMasterCert($D, Did, rgx, ltpkD)
+    ]->
+    [
+     Master_Cert_Verified(Cert_M)
+    ]
+
+    /* Detection */
+
+    rule DOMAIN_PERIODICAL_VERIFICATION_GOOD:
+  [
+    L_LocalRecord($D, Did, rgx, record),
+    L_Clog($C, clogid, rgx, clog)
+    ,StDone($D, Did, n, rgx, ltpkD, stpkD)
+  ]
+  --[
+     SubsetEq(clog, record),	// clog is a subset of D's local
+                                // history. It means that all records
+                                // about D in the clog are generated
+                                // by the domain owner D.
+     CheckedLog($D, Did, rgx, 'nil', 'good', 'nil')
+  ]->
+  [
+    L_LocalRecord($D, Did, rgx, record),
+    L_Clog($C, clogid, rgx, clog)
+  ]
+
+rule DOMAIN_PERIODICAL_VERIFICATION_BAD:
+  let
+  Cuckoo = <$D, Did, ltpkD, stpkD>
+  clog = Cuckoo+rest
+  in
+  [
+   L_LocalRecord($D, Did, rgx, record),
+   L_Clog($C, clogid, rgx, clog)
+   ,StDone($D, Did, n, rgx, ltpkD, stpkD)
+  ]
+--[
+   NotIn(Cuckoo, record),
+   CheckedLog($D, Did, rgx, ltpkD, 'bad', stpkD)  // bad key is in
+                                                  // clog but not
+                                                  // generated by D
+  ]->
+  [
+   L_LocalRecord($D, Did, rgx, record),
+   L_Clog($C, clogid, rgx, clog)
+  ]
+
+axiom only_one:
+  "(All x #i #j. (Only_One(x)@i & Only_One(x)@j) ==> (#i = #j))"
+
+axiom types_distinct:
+  "(All t1 t2 x #i #j. (Is_Type(t1,x)@i & Is_Type(t2,x)@j) ==> (t1 = t2))"
+
+axiom eq_check_succeed:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+axiom neq_check_succeed:
+  "All x y #i. Neq(x,y) @ i ==> not (x = y)"
+
+axiom notin_check_succeed:
+  "All x l #i. NotIn(x,l) @ i ==> not (Ex rest. x+rest = l)"
+
+axiom in_check_succeed:
+  "All x l #i. IsIn(x,l) @ i ==> Ex rest. x+rest = l"
+
+
+axiom subseteq_check_succeed:
+  "All l m #i. SubsetEq(l,m) @ i ==> ( ( l = m ) | (Ex rest. l+rest = m) )"
+
+axiom one_role_instance:
+  "(All #i #j role param1 param2 .
+     (
+     Start_Role(role,param1) @ i &
+     Start_Role(role,param2) @ j
+     )
+     ==>
+     ( #i = #j )
+   )"
+
+ /* We can run protocol correctly without having any compromised party*/
+
+lemma protocol_correctness:
+ exists-trace
+ " /* It is possible that */
+   Ex D Did n rgx ltpkD stpkD #i1.
+
+   /* The user received a confirmation, i.e. hashed secret the user
+   has sent, from the network */
+
+   Com_Done(D, Did, n, rgx, ltpkD, stpkD) @ #i1
+
+     /* without the adversary compromising any party. */
+   &   not (Ex #i2 CA ltkCA.
+                Compromise_CA(CA,ltkCA) @ #i2)
+
+   &   not (Ex #i3 C ltkC.
+                Compromise_CLM(C,ltkC) @ #i3)
+
+   &   not (Ex #i4 M ltkM.
+                Compromise_MLM(M,ltkM) @ #i4)
+
+"
+lemma message_secrecy_no_compromised_party:
+ "
+ All D Did m rgx ltpkD stpkD #i1.
+
+   /* If a user received a confirmation, i.e. hashed secret the user
+   has sent, from the network */
+
+   (Com_Done(D, Did, m, rgx, ltpkD, stpkD) @ #i1
+
+/* and no party has been compromised */
+   &   not (Ex #i2 CA ltkCA.
+                Compromise_CA(CA,ltkCA) @ #i2)
+
+   &   not (Ex #i3 C ltkC.
+                Compromise_CLM(C,ltkC) @ #i3)
+
+   &   not (Ex #i4 M ltkM.
+                Compromise_MLM(M,ltkM) @ #i4)
+      )
+      ==>
+      ( /* then the adversary cannot know m */
+       not (Ex #i5. K(m) @ #i5)
+      )
+ "
+
+lemma message_secrecy_compromise_all_domain_verified_master_cert:
+ "
+ All D Did m rgx ltpkD stpkD #i1.
+
+   /* If a user received a confirmation, i.e. hashed secret the user
+   has sent, from the network */
+
+   (Com_Done(D, Did, m, rgx, ltpkD, stpkD) @ #i1
+
+/* and at an earlier time, the domain server has verified his master
+certificate */
+
+     & Ex #i2.
+     VerifiedMasterCert(D, Did, rgx, ltpkD) @ #i2 &
+        #i2 < #i1
+/* and all parties can be compromised*/
+      )
+      ==>
+      ( /* then the adversary cannot know m */
+       not (Ex #i3. K(m) @ #i3)
+      )
+ "
+  /* Sanity check on verification: can finish trace with good log*/
+
+lemma protocol_can_finish_with_good_log:
+ exists-trace
+ "/* It is possible that */
+   Ex D Did n rgx ltpkD stpkD #i1 #i2.
+
+   /* The user received a confirmation, i.e. hashed secret the user
+   has sent, from the network */
+
+   Com_Done(D, Did, n, rgx, ltpkD, stpkD) @ #i1
+
+   /* and we check the log afterwards and find no fake records */
+   &  #i1 < #i2
+   &  CheckedLog(D, Did, rgx, 'nil', 'good', 'nil') @ #i2
+
+   /* and the adversary did not compromise any party */
+   &   not (Ex #i3 CA ltkCA.
+                Compromise_CA(CA,ltkCA) @ #i3)
+
+   &   not (Ex #i4 C ltkC.
+                Compromise_CLM(C,ltkC) @ #i4)
+
+   &   not (Ex #i5 M ltkM.
+                Compromise_MLM(M,ltkM) @ #i5)
+
+ "
+
+lemma detect_bad_records_in_the_log_when_master_cert_not_verified:
+
+ "
+ All D Did m rgx ltpkD flag stpkD #i1 #i2 #i3.
+
+   /* If a user received a confirmation, i.e. hashed secret the user
+   has sent, from the network */
+
+   (Com_Done(D, Did, m, rgx, ltpkD, stpkD) @ #i1
+
+/* and all parties can be compromised*/
+
+/* and the master certificate of the domain was not initially verified */
+
+/* and the adversary knows m */
+
+     &  K(m) @ #i2
+
+/* and we afterwards check the log */
+     &  CheckedLog(D, Did, rgx, ltpkD, flag, stpkD) @ #i3
+
+    &   #i1 < #i3)
+      ==>
+      ( /* then we can detect a fake record in the log */
+        (flag = 'bad')
+      )
+ "
+
+end
