@@ -406,6 +406,7 @@ rule INIT_DOMAIN_RGX1:
   --[ Is_Type('Domain', $D)]->
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),
+    Only_One(<'INITDOMAIN',$D>),
     !DomainInfo($D, ~Did, 'RGX1', pk(~ltkD)),
     L_LocalRecord($D, ~Did, 'RGX1', 'nil'),
     MasterKey($D, ~Did, 'RGX1', pk(~ltkD)),
@@ -421,6 +422,7 @@ rule INIT_DOMAIN_RGX2:
   --[ Is_Type('Domain', $D)]->
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),
+    Only_One(<'INITDOMAIN',$D>),
     !DomainInfo($D, ~Did, 'RGX2', pk(~ltkD)),
     L_LocalRecord($D, ~Did, 'RGX2', 'nil'),
     MasterKey($D, ~Did, 'RGX2', pk(~ltkD)),
