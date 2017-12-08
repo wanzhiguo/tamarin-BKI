@@ -83,17 +83,19 @@ restriction InEq:   "not (Ex x #i. InEq(x,x) @ i)"
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1' 
-        k = '1'
-        t = '1'
-	Init = <'INITSYS', $n, k, t>	//Init is feeded by adversary
+//        n = '123'+'123'+'123'
+//        k = '123'+'123'
+//        t = '1'
+	Init = <'INITSYS', n, k, t>	//Init is feeded by adversary
    in
     [ In(Init) ]
     --[ SubsetEq(k, n),
         SubsetEq(t, k),
-//        InEq(n, '1'),
+        InEq(n, 'xxx'),
+        InEq(k, 'xxx'),
 	Only_One('INITSYS')]->
-    [!PubParams(n, k, t)]
+    [!PubParams(n, k, t),
+      Out(<n, k, t>)]
 
 /*Initialisation: Certificate log maintainer CLM1. */
 
@@ -125,7 +127,7 @@ rule INIT_BLOG:
      [
       //!CLM_RGX($C, pk(ltkC), rgxC),		// Persistent fact that C is associated with rgxC, 
 						// Do not consume StStateInitCLM. --Zhiguo
-      L_Blog($B, ~blogid, 'nil') // the log maintained by the
+      L_Blog($B, ~blogid, 'xxx') // the log maintained by the
                                           // CLM is for domains whose
                                           // name is an instence of
                                           // regular expression RGX1
@@ -195,9 +197,9 @@ rule INIT_DOMAIN:
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),
     !DomainInfo($D, pk(~ltkD)),
-    LocalRecord($D, 'nil'),
-    Sigs_List($D, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is CA_list
-    Sigs_Check_List($D, 'nil'),		// To store sigs that have been verified. Zhiguo
+    LocalRecord($D, '0'),
+    Sigs_List($D, 'xxx', 'xxx', 'xxx'),	// The first list is sigs_list, the second is CA_list
+    Sigs_Check_List($D, 'xxx'),		// To store sigs that have been verified. Zhiguo
     //MasterKey($D, pk(~ltkD)),
     Out(pk(~ltkD))
     ]
@@ -261,12 +263,12 @@ rule CREATE_CERT_PHASE_2:
   --[
      Is_Type('Domain', $D),
      Is_Type('CA', $CA),
-     Uniq(<'CheckSig', $D, $CA>),		// A CA only provides a single signature, make it different from PHASE_1
+     Uniq( < 'CheckSig', $D, i, $CA > ),		// A CA only provides a single signature, make it different from PHASE_1
      NotIn($CA, CAs),		// This CA has not provided a signature for the Domain.
      Eq(ltpkCA,pk(ltkCA)),
      Eq(verify(Sig, <'DomainCert', $D, ltpkD>, ltpkCA), true )
     ]->
-    [Sigs_List($D, Sigs + Sig_full, CAs + $CA, nSigs + '1')]   // Added into Sigs_List after checking. Zhiguo
+    [Sigs_List($D, Sigs + Sig_full, CAs + $CA, nSigs + '123')]   // Added into Sigs_List after checking. Zhiguo
 					// Sigs include Sig_full because Sig_full include $D and Did information
 
 /* If k sigs have been collected, domain owner submits it to BLMs for logging. 
@@ -348,9 +350,6 @@ restriction only_one:
 restriction only_one4:
   "(All x y z w #i #j. (Only_One3(x,y,z,w)@i & Only_One3(x,y,z,w)@j) ==> (#i = #j))"
 
-restriction only_one_list:	// Enforce a list of form: '1' + '1' + .... + '1'
-  "(All x #i. (List_of_Ones(x)@i ) ==> not (Ex y z. (not (y = '1')) & (y+z = x) ))"
-
 restriction bound_domain_rgx:
   "(All x y1 y2 #i #j. (Bind_Domain_RGX(x,y1)@i & Bind_Domain_RGX(x,y2)@j) ==> (#i = #j) & (y1 = y2))"
 
@@ -398,11 +397,11 @@ lemma protocol_correctness:
    Accept(D, Sigs, CAs) @ #i1
 
      /* without the adversary compromising any party. */
-   &   not (Ex #i2 CA ltkCA.
-                Compromise_CA(CA,ltkCA) @ #i2)
-
-   &   not (Ex #i3 B ltkB.
-                Compromise_BLM(B,ltkB) @ #i3)
+//   &   not (Ex #i2 CA ltkCA.
+//                Compromise_CA(CA,ltkCA) @ #i2)
+//
+//   &   not (Ex #i3 B ltkB.
+//                Compromise_BLM(B,ltkB) @ #i3)
 
 "
 //lemma message_secrecy_no_compromised_party:
@@ -466,7 +465,7 @@ lemma protocol_correctness:
 //
 //   /* and we check the log afterwards and find no fake records */
 //   &  #i1 < #i2
-//   &  CheckedLog(D, rgx, 'nil', 'good', 'nil') @ #i2
+//   &  CheckedLog(D, rgx, '0', 'good', '0') @ #i2
 //
 //   /* and the adversary did not compromise any party */
 //   &   not (Ex #i3 CA ltkCA.
