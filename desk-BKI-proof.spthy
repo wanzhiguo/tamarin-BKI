@@ -1,14 +1,13 @@
 /* Provide hints for Tamarin's heuristics.  In this case, we tell
    Tamarin to delay (make "Last", "L_") finding the sources for the
-   LogDevice fact, since it doesn't provide useful information and can
-   lead to non-termination. It is similar for LogCloud, but the trace
-   is found faster if we don't use L_ for that. */
+   Sigs_Check_List fact, since it doesn't provide useful information and can
+   lead to non-termination.  */
 
 /* In this proof, we use several abstractions. For example, we treat
    our log structure as a list to record simplified data item. */
 
 
-theory BKI_protocol_correctness
+theory BKI_protocol_security
 
 /* Author: Zhiguo Wan*/
 
@@ -72,13 +71,28 @@ equations:
 
 
 restriction Unique: "All x #i #j. Uniq(x) @ i & Uniq(x) @ j ==> #i = #j"
-
-// restriction Less:   "All x y #i. Less(x,y) @ i ==> Ex z. x + z = y"
-// we use two restrictions for "x <> y" and "not (y < x)"
-restriction Less1:   "not (Ex x #i. Less(x,x) @ i)"
-restriction Less2:   "not (Ex x y #i. Less(x+y,x) @ i)"
 restriction InEq:   "not (Ex x #i. InEq(x,x) @ i)"
+restriction types_distinct:
+  "(All t1 t2 x #i #j. (Is_Type(t1,x)@i & Is_Type(t2,x)@j) ==> (t1 = t2))"
 
+restriction eq_check_succeed:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction neq_check_succeed:
+  "All x y #i. Neq(x,y) @ i ==> not (x = y)"
+
+restriction notin_check_succeed:
+  "All x l #i. NotIn(x,l) @ i ==> not (Ex rest. x+rest = l)"
+
+restriction in_check_succeed:
+  "All x l #i. IsIn(x,l) @ i ==> Ex rest. x+rest = l"
+
+restriction subseteq_check_succeed:
+  "All l m #i. SubsetEq(l,m) @ i ==> ( ( l = m ) | (Ex rest. l+rest = m) )"
+
+
+
+/* Secure channel between Domain and CAs */
 rule ChanOut_S:
         [ Out_S($A,$B,x) ]
       --[ ChanOut_S($A,$B,x) ]->
@@ -90,22 +104,22 @@ rule ChanIn_S:
         [ In_S($A,$B,x) ]
 
 
-
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'+'1'
-        k = '1'+'1'
-        t = '1'+'1'
-	Init = <'INITSYS', n, k, t>	//Init is feeded by adversary
+//        n = '1'+'1'+'1'+'1'+'1'			// 3 CAs in total
+//        k = '1'+'1'+'1'			// 2 out of 3 CAs required to issue a cert.
+//        t = '1'
+	Init = <'INITSYS', n, k, t>	//
    in
     [ In(Init) ]
     --[ SubsetEq(k, n),
-//        SubsetEq(t, k),
+        SubsetEq(t, k),
         InEq(n, 'nil'),
         InEq(k, 'nil'),
 	Uniq('INITSYS')]->
     [!PubParams(n, k, t),
+     Compromised_CAs('nil'),
       Out(<n, k>)]
 
 /*Initialisation: Certificate log maintainer CLM1. */
@@ -157,7 +171,7 @@ rule INIT_BLOG:
      Is_Type('CA', $CA),
      Uniq(<'CA', $CA>),		// Multiple CAs needed, each one is init only once
      Uniq(<'CA', CAid>),		// Multiple CAs needed, each one is init only once
-     IsIn(CAid, n)		// $CA is in form of '1'+...+'1'
+     IsIn(CAid, n+'1')		// $CA is in form of '1'+...+'1'
      ]->
 
   [ !Ltk($CA, ~ltkCA),
@@ -170,16 +184,30 @@ rule INIT_BLOG:
   /* Compromise a CA */
 
   rule COMPROMISE_CA:
-          [ !Ltk($CA, ltkCA)
-          ]
+   [ !Ltk($CA, ltkCA),
+     Compromised_CAs(Compromised_CA_List)
+    ]
   --[
      Is_Type('CA', $CA),
+     Uniq(<'Compromise_CA', $CA>),
      Compromise_CA($CA,ltkCA)
      ]->
 
   [
+   Compromised_CAs(Compromised_CA_List+'1'),
    Out(ltkCA)
   ]
+  
+  rule COMPROMISE_k_CAs:
+    [
+   !PubParams(n,k,t),
+   Compromised_CAs(Compromised_CA_List)
+    ]
+   --[
+   Eq(k+'nil', Compromised_CA_List),
+   K_CAs_Compromised(Compromised_CA_List)
+    ]->[
+    ]
   
 
   /* Compromise a BLM */
@@ -323,78 +351,96 @@ rule CHECK_CERT_REQUEST_4:
     ]
 
 rule ISSUE_CERT_5:
+    let
+       record = sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB)
+    in
     [
     !Sigs_List_Final($D, Did,  Sigs, CA_pks, nSigs),
     !PubParams(n,k,t),
-    L_Sigs_Check_List($D, Did, Sigs_Checked)
+    L_Sigs_Check_List($D, Did, Sigs_Checked),
+    !Ltk($B, ltkB),
+    !Pk($D, ltpkD),
+    L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
     ]
   --[
     Eq(k+'nil', Sigs_Checked),		// All sigs have been checked.
+    Is_Type('BLM', $B),
     Accept($D, Did, Sigs, CA_pks)
     ]->
     [
-    Cert_Issued($D, Sigs, CA_pks)
+    Cert_Issued($D, Sigs, CA_pks),
+    L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
     ]
 
-//rule CREATE_CERT_FINAL:
-//    [Cert_Issued($D, Sigs, CAs)]
-//  --[
-//     Accept($D, Sigs, CAs)]->
-//    [ ]
 
-restriction only_one:
-  "(All x #i #j. (Only_One(x)@i & Only_One(x)@j) ==> (#i = #j))"
+/* Security property 1.
+   Adversary need to compromise at least k CAs to get an invalid cert issued 
+   on the blockchain log.
+  */
+#ifdef secure1
+lemma invalid_cert_issued_more_than_k_compromised:
+ "
+ All D Did Sigs CA_pks #i1.
 
-//restriction only_one2:
-//  "(All x y #i #j. (Only_One2(x,y)@i & Only_One2(x,y)@j) ==> (#i = #j))"
+   /* If a domain has its cert successfully issued on the blockchain
+   */
 
-restriction only_one4:
-  "(All x y z w #i #j. (Only_One3(x,y,z,w)@i & Only_One3(x,y,z,w)@j) ==> (#i = #j))"
+    (Accept(D, Did, Sigs, CA_pks) @ #i1
 
-restriction bound_domain_rgx:
-  "(All x y1 y2 #i #j. (Bind_Domain_RGX(x,y1)@i & Bind_Domain_RGX(x,y2)@j) ==> (#i = #j) & (y1 = y2))"
+/* and less than k CAs have been compromised */
+   &   not (Ex #i2 Compromised_CA_List.
+                K_CAs_Compromised(Compromised_CA_List) @ #i2)
 
-restriction types_distinct:
-  "(All t1 t2 x #i #j. (Is_Type(t1,x)@i & Is_Type(t2,x)@j) ==> (t1 = t2))"
+/* and BLM is not compromised */
+   &   not (Ex #i3 B ltkB.
+                Compromise_BLM(B,ltkB) @ #i3)
+      )
+      ==>
+      ( /* the Domain must be a valid domain */
+       (Ex #i4. Is_Type('Domain', D) @ #i4)
+      )
+ "
+#endif
 
-restriction eq_check_succeed:
-  "All x y #i. Eq(x,y) @ i ==> x = y"
+/* Security property 2.
+   Adversary need to compromise at least t CAs to get an invalid cert revoked
+   on the blockchain log.
+  */
+#ifdef secure2
+lemma revoke_cert_issued_more_than_t_compromised:
+ "
+ All D Did Sigs CA_pks #i1.
 
-restriction neq_check_succeed:
-  "All x y #i. Neq(x,y) @ i ==> not (x = y)"
+   /* If a domain has its cert successfully issued on the blockchain
+   */
 
-restriction notin_check_succeed:
-  "All x l #i. NotIn(x,l) @ i ==> not (Ex rest. x+rest = l)"
+    (Accept(D, Did, Sigs, CA_pks) @ #i1
 
-restriction in_check_succeed:
-  "All x l #i. IsIn(x,l) @ i ==> Ex rest. x+rest = l"
+/* and less than k CAs have been compromised */
+   &   not (Ex #i2 Compromised_CA_List.
+                K_CAs_Compromised(Compromised_CA_List) @ #i2)
 
-
-restriction subseteq_check_succeed:
-  "All l m #i. SubsetEq(l,m) @ i ==> ( ( l = m ) | (Ex rest. l+rest = m) )"
-
-restriction one_role_instance:
-  "(All #i #j role param1 param2 .
-     (
-     Start_Role(role,param1) @ i &
-     Start_Role(role,param2) @ j
-     )
-     ==>
-     ( #i = #j )
-   )"
-
+/* and BLM is not compromised */
+   &   not (Ex #i3 B ltkB.
+                Compromise_BLM(B,ltkB) @ #i3)
+      )
+      ==>
+      ( /* the Domain must be a valid domain */
+       (Ex #i4. Is_Type('Domain', D) @ #i4)
+      )
+ "
+#endif
 
  /* We can run protocol correctly without having any compromised party*/
-
+#ifdef correct
 lemma protocol_correctness:
  exists-trace
  " /* It is possible that */
    Ex D Did Sigs CAs #i1.
 
-   /* The user received a confirmation, i.e. hashed secret the user
-   has sent, from the network */
+   /* The domain has its cert issued to the blockchain log
+   */
 
-   //Com_Done(D, n, rgx, ltpkD, stpkD) @ #i1
    Accept(D, Did, Sigs, CAs) @ #i1
 
      /* without the adversary compromising any party. */
@@ -405,107 +451,7 @@ lemma protocol_correctness:
                 Compromise_BLM(B,ltkB) @ #i3)
 
 "
-//lemma message_secrecy_no_compromised_party:
-// "
-// All D m rgx ltpkD stpkD #i1.
-//
-//   /* If a user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   (Com_Done(D, m, rgx, ltpkD, stpkD) @ #i1
-//
-///* and no party has been compromised */
-//   &   not (Ex #i2 CA ltkCA.
-//                Compromise_CA(CA,ltkCA) @ #i2)
-//
-//   &   not (Ex #i3 C ltkC.
-//                Compromise_CLM(C,ltkC) @ #i3)
-//
-//   &   not (Ex #i4 M ltkM.
-//                Compromise_MLM(M,ltkM) @ #i4)
-//      )
-//      ==>
-//      ( /* then the adversary cannot know m */
-//       not (Ex #i5. K(m) @ #i5)
-//      )
-// "
-//
-//lemma message_secrecy_compromise_all_domain_verified_master_cert:
-// "
-// All D m rgx ltpkD stpkD #i1.
-//
-//   /* If a user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   (Com_Done(D, m, rgx, ltpkD, stpkD) @ #i1
-//
-///* and at an earlier time, the domain server has verified his master
-//certificate */
-//
-//     & Ex #i2.
-//     VerifiedMasterCert(D, rgx, ltpkD) @ #i2 &
-//        #i2 < #i1
-///* and all parties can be compromised*/
-//      )
-//      ==>
-//      ( /* then the adversary cannot know m */
-//       not (Ex #i3. K(m) @ #i3)
-//      )
-// "
-//  /* Sanity check on verification: can finish trace with good log*/
-//
-//lemma protocol_can_finish_with_good_log:
-// exists-trace
-// "/* It is possible that */
-//   Ex D n rgx ltpkD stpkD #i1 #i2.
-//
-//   /* The user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   Com_Done(D, n, rgx, ltpkD, stpkD) @ #i1
-//
-//   /* and we check the log afterwards and find no fake records */
-//   &  #i1 < #i2
-//   &  CheckedLog(D, rgx, '0', 'good', '0') @ #i2
-//
-//   /* and the adversary did not compromise any party */
-//   &   not (Ex #i3 CA ltkCA.
-//                Compromise_CA(CA,ltkCA) @ #i3)
-//
-//   &   not (Ex #i4 C ltkC.
-//                Compromise_CLM(C,ltkC) @ #i4)
-//
-//   &   not (Ex #i5 M ltkM.
-//                Compromise_MLM(M,ltkM) @ #i5)
-//
-// "
-//
-//lemma detect_bad_records_in_the_log_when_master_cert_not_verified:
-//
-// "
-// All D m rgx ltpkD flag stpkD #i1 #i2 #i3.
-//
-//   /* If a user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   (Com_Done(D, m, rgx, ltpkD, stpkD) @ #i1
-//
-///* and all parties can be compromised*/
-//
-///* and the master certificate of the domain was not initially verified */
-//
-///* and the adversary knows m */
-//
-//     &  K(m) @ #i2
-//
-///* and we afterwards check the log */
-//     &  CheckedLog(D, rgx, ltpkD, flag, stpkD) @ #i3
-//
-//    &   #i1 < #i3)
-//      ==>
-//      ( /* then we can detect a fake record in the log */
-//        (flag = 'bad')
-//      )
-// "
+#endif
+
 
 end
