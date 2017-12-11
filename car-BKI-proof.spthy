@@ -79,23 +79,12 @@ restriction Less1:   "not (Ex x #i. Less(x,x) @ i)"
 restriction Less2:   "not (Ex x y #i. Less(x+y,x) @ i)"
 restriction InEq:   "not (Ex x #i. InEq(x,x) @ i)"
 
-rule ChanOut_S:
-        [ Out_S($A,$B,x) ]
-      --[ ChanOut_S($A,$B,x) ]->
-        [ !Sec($A,$B,x) ]
-
-rule ChanIn_S:
-        [ !Sec($A,$B,x) ]
-      --[ ChanIn_S($A,$B,x) ]->
-        [ In_S($A,$B,x) ]
-
-
 
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
         n = '1'+'1'+'1'+'1'+'1'
-        k = '1'+'1'+'1'
+        k = '1'+'1'
 //        t = '1'
 	Init = <'INITSYS', n, k, t>	//Init is feeded by adversary
    in
@@ -147,25 +136,94 @@ rule INIT_BLOG:
 
   /* Initialisation: Certificate authorities*/
 
-  rule INIT_CA:
-  let q = < 'Init_CA', CAid, $CA>
+  rule INIT_CA1:
+  let q = < 'Init_CA1', '1', $CA>
   in
   [  In(q),
-     Fr(~ltkCA),
-     !PubParams(n, k, t)]
+     Fr(~ltkCA) ]
+//     !PubParams(n, k, t)]
   --[
      Is_Type('CA', $CA),
-     Uniq(<'CA', $CA>),		// Multiple CAs needed, each one is init only once
-     Uniq(<'CA', CAid>),		// Multiple CAs needed, each one is init only once
-     IsIn(CAid, n)		// $CA is in form of '1'+...+'1'
+     Uniq(<'CA', $CA>),
+     Uniq(<'CA1'>)		// Multiple CAs needed, each one is init only once
      ]->
 
   [ !Ltk($CA, ~ltkCA),
     !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
-    !Pmap( CAid, $CA ),
+    !Pmap('1', $CA),
     Out(pk(~ltkCA))
   ]
 
+  rule INIT_CA2:
+  let q = < 'Init_CA2', '2', $CA>
+  in
+  [  In(q),
+     Fr(~ltkCA)]
+//     !PubParams(n, k, t)]
+  --[
+     Is_Type('CA', $CA),
+     Uniq(<'CA', $CA>),
+     Uniq(<'CA2'>)		// Multiple CAs needed, each one is init only once
+     ]->
+
+  [ !Ltk($CA, ~ltkCA),
+    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
+    !Pmap('2', $CA),
+    Out(pk(~ltkCA))
+  ]
+
+  rule INIT_CA3:
+  let q = < 'Init_CA3', '3', $CA>
+  in
+  [  In(q),
+     Fr(~ltkCA)]
+//     !PubParams(n, k, t)]
+  --[
+     Is_Type('CA', $CA),
+     Uniq(<'CA', $CA>),
+     Uniq(<'CA3'>)		// Multiple CAs needed, each one is init only once
+     ]->
+
+  [ !Ltk($CA, ~ltkCA),
+    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
+    !Pmap('3', $CA),
+    Out(pk(~ltkCA))
+  ]
+
+  rule INIT_CA4:
+  let q = < 'Init_CA4', '4', $CA>
+  in
+  [  In(q),
+     Fr(~ltkCA)]
+//     !PubParams(n, k, t)]
+  --[
+     Is_Type('CA', $CA),
+     Uniq(<'CA', $CA>),
+     Uniq(<'CA4'>)		// Multiple CAs needed, each one is init only once
+     ]->
+
+  [ !Ltk($CA, ~ltkCA),
+    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
+    !Pmap('4', $CA),
+    Out(pk(~ltkCA))
+  ]
+
+  rule INIT_CA5:
+  let q = < 'Init_CA5', '5', $CA>
+  in
+  [  In(q),
+     Fr(~ltkCA)]
+  --[
+     Is_Type('CA', $CA),
+     Uniq(<'CA', $CA>),
+     Uniq(<'CA5'>)		// Multiple CAs needed, each one is init only once
+     ]->
+
+  [ !Ltk($CA, ~ltkCA),
+    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
+    !Pmap('5', $CA),
+    Out(pk(~ltkCA))
+  ]
 
   /* Compromise a CA */
 
@@ -208,14 +266,14 @@ rule INIT_DOMAIN:
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),
     !DomainInfo($D, ~Did, pk(~ltkD)),
-    Sigs_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
-    L_Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. Zhiguo
+    L_Sigs_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
+    Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. Zhiguo
     Out(pk(~ltkD))
     ]
 
   /* Request a certificate from CAs */
-rule DOMAIN_REQUEST_CERT_0:
-      let request= <'RequestCert', $D, Did, ltpkD>
+rule REQUEST_CERT:
+     let request= <'RequestCert', $D, Did, ltpkD>
      in
      [
       !DomainInfo($D, Did, ltpkD)
@@ -224,20 +282,20 @@ rule DOMAIN_REQUEST_CERT_0:
      Is_Type('Domain', $D)
      ]->
     [
-     Out_S($D, $CA, request)     // Obtain a signature from CA--Need k Sigs for a certificate.
+     Out(request)
     ]
 
 
   /* Domain requests signatures from at least k CAs
      This should be offline, or a secure out-of-band channel. Zhiguo
      */
-rule CA_GENERATE_SIG_1:
+rule CREATE_CERT_PHASE_1:
   let request= <'RequestCert', $D, Did, ltpkD>
       Sig = sign( <'DomainCert', $D, Did, ltpkD>, ltkCA)
       Sig_full = <$D, Did, Sig, $CA>
   in
      [
-      In_S($D, $CA, request),
+      In(request),
       !Ltk($CA, ltkCA),			// Must have private key to sign the request.
       !Pk($D, ltpkD),
       !DomainInfo($D, Did, ltpkD)
@@ -248,20 +306,21 @@ rule CA_GENERATE_SIG_1:
      Uniq(<'ObtainSig', $D, Did, $CA>)		// A CA only provides a single signature
      ]->
     [
-     Out_S($CA, $D, Sig_full)     // Obtain a signature from CA--Need k Sigs for a certificate.
+     Out(Sig_full)     // Obtain a signature from CA--Need k Sigs for a certificate.
     ]
   
   /* Collect sigs from CAs
      */
-rule DOMAIN_RECIEVE_SIG_2:
+rule CREATE_CERT_PHASE_2:
    let
        Sig_full = <$D, Did, Sig, $CA>
    in
 
     [
-     In_S($CA, $D, Sig_full),
-     Sigs_List($D, Did, Sigs, CA_pks, nSigs),	// Update current Sigs_List, add a new sig into it. Zhiguo
+     L_Sigs_List($D, Did, Sigs, CA_pks, nSigs),	// Update current Sigs_List, add a new sig into it. Zhiguo
+     In(Sig_full),
      !DomainInfo($D, Did, ltpkD),
+     !Pmap(CAid, $CA),
      !Pk($CA,ltpkCA),			// CA -- ltpkCA -- Sig -- CAs, Sigs---All bind together.
      !Pk($D, ltpkD)			// restriction fact for domain D, otherwise ltpkD may not be equal to pk(ltkD).
     ]
@@ -273,41 +332,36 @@ rule DOMAIN_RECIEVE_SIG_2:
 					// 12.9: not needed cos Uniq above.
      Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
-    [Sigs_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' )
-     ]   // Added into Sigs_List after checking. Zhiguo
+    [L_Sigs_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' )]   // Added into Sigs_List after checking. Zhiguo
 					// Sigs include Sig_full because Sig_full include $D and Did information
 					// CA is a single symbol, i.e. 1 or 2 or 3 etc. 
 
 /* If k sigs have been collected, domain owner submits it to BLMs for logging. 
   */
-rule CREATE_CERT_3:
-    let Cert_request = <$D, Did, Sigs, CA_pks>
-    in
+rule CREATE_CERT_PHASE_3:
     [
     !PubParams(n, k, t),
     !DomainInfo($D, Did, ltpkD),
-    Sigs_List($D, Did, Sigs, CA_pks, nSigs)
+    L_Sigs_List($D, Did, Sigs, CA_pks, nSigs)
     ]
   --[
     Is_Type('Domain', $D),
-    Eq(k+'nil', nSigs)		// k = '1'+ '3'. If k is in nSigs, then k Sigs are collected by domain owner.
+    SubsetEq(k, nSigs)		// k = '1'+ '3'. If k is in nSigs, then k Sigs are collected by domain owner.
     ]->
     [
-    !Sigs_List_Final($D, Did, Sigs, CA_pks, nSigs),	// This list is consumed at Phase_5 by BLM
-    Out( Cert_request )
+    !L_Sigs_List_Final($D, Did, Sigs, CA_pks, nSigs)	// This list is consumed at Phase_5 by BLM
+    //Out(Sigs)
     ]
 /* Submit k signatures, and check each signature separately */ 
-rule CHECK_SIGS_4: 
+rule CREATE_CERT_PHASE_4: 
    let 
-//      Sig = sign( <'DomainCert', $D, ltpkD>, ltkCA)
       Sig_full = <$D, Did, Sig, $CA>
-      Cert_request = <$D, Did, Sigs, CA_pks>
    in
     [
     In(Sig_full),
-    In(Cert_request),
+    !L_Sigs_List_Final($D, Did, Sigs, CA_pks, nSigs),	// This list is consumed at Phase_5 by BLM
     !DomainInfo($D, Did, ltpkD),
-    L_Sigs_Check_List($D, Did, Sigs_Checked),
+    Sigs_Check_List($D, Did, Sigs_Checked),
     !Pk($CA, ltpkCA),
     !Pk($D, ltpkD)
     ]
@@ -315,21 +369,19 @@ rule CHECK_SIGS_4:
     Is_Type('Domain', $D),
     Is_Type('CA', $CA),
     Uniq(<'BLM_CheckSig', $D, Did, $CA>),	// The CA's sig for is checked for only once.
-    IsIn(Sig_full, Sigs),	// Received Sigs include a valid signature.
     Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [
-    L_Sigs_Check_List($D, Did, Sigs_Checked + '1')
+    Sigs_Check_List($D, Did, Sigs_Checked + '1')
     ]
 
-rule ISSUE_CERT_5:
+rule CREATE_CERT_PHASE_5:
     [
-    !Sigs_List_Final($D, Did,  Sigs, CA_pks, nSigs),
-    !PubParams(n,k,t),
-    L_Sigs_Check_List($D, Did, Sigs_Checked)
+    !L_Sigs_List_Final($D, Did,  Sigs, CA_pks, nSigs),
+    Sigs_Check_List($D, Did, Sigs_Checked)
     ]
   --[
-    Eq(k+'nil', Sigs_Checked),		// All sigs have been checked.
+    Eq(nSigs, Sigs_Checked),		// All sigs have been checked.
     Accept($D, Did, Sigs, CA_pks)
     ]->
     [

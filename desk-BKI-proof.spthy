@@ -94,9 +94,9 @@ rule ChanIn_S:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'+'1'+'1'+'1'
-        k = '1'+'1'+'1'
-//        t = '1'
+        n = '1'+'1'+'1'
+        k = '1'+'1'
+        t = '1'+'1'
 	Init = <'INITSYS', n, k, t>	//Init is feeded by adversary
    in
     [ In(Init) ]
@@ -214,7 +214,7 @@ rule INIT_DOMAIN:
     ]
 
   /* Request a certificate from CAs */
-rule DOMAIN_REQUEST_CERT_0:
+rule DOMAIN_REQUEST_SIG_0:
       let request= <'RequestCert', $D, Did, ltpkD>
      in
      [
@@ -280,7 +280,7 @@ rule DOMAIN_RECIEVE_SIG_2:
 
 /* If k sigs have been collected, domain owner submits it to BLMs for logging. 
   */
-rule CREATE_CERT_3:
+rule CREATE_CERT_REQUEST_3:
     let Cert_request = <$D, Did, Sigs, CA_pks>
     in
     [
@@ -297,7 +297,7 @@ rule CREATE_CERT_3:
     Out( Cert_request )
     ]
 /* Submit k signatures, and check each signature separately */ 
-rule CHECK_SIGS_4: 
+rule CHECK_CERT_REQUEST_4: 
    let 
 //      Sig = sign( <'DomainCert', $D, ltpkD>, ltkCA)
       Sig_full = <$D, Did, Sig, $CA>

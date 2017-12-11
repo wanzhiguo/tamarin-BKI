@@ -21,10 +21,10 @@ equations: te_inv(te(x)) = x // te is not hiding
 
 restriction Unique: "All x #i #j. Uniq(x) @ i & Uniq(x) @ j ==> #i = #j"
 // Instead of using the restriction for "x < y" directly, 
-restriction Less:   "All x y #i. Less(x,y) @ i ==> Ex z. x + z = y"
+// restriction Less:   "All x y #i. Less(x,y) @ i ==> Ex z. x + z = y"
 // we use two restrictions for "x <> y" and "not (y < x)"
-//restriction Less1:   "not (Ex x #i. Less(x,x) @ i)"
-//restriction Less2:   "not (Ex x y #i. Less(x+y,x) @ i)"
+restriction Less1:   "not (Ex x #i. Less(x,x) @ i)"
+restriction Less2:   "not (Ex x y #i. Less(x+y,x) @ i)"
 restriction InEq:   "not (Ex x #i. InEq(x,x) @ i)"
 
 rule AuthOut:
