@@ -83,16 +83,16 @@ restriction InEq:   "not (Ex x #i. InEq(x,x) @ i)"
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'+'1'+'1'+'1'
-        k = '1'+'1'
+//        n = '123'+'123'+'123'+'123'
+//        k = '123'+'123'
 //        t = '1'
 	Init = <'INITSYS', n, k, t>	//Init is feeded by adversary
    in
     [ In(Init) ]
     --[ SubsetEq(k, n),
 //        SubsetEq(t, k),
-        InEq(n, 'nil'),
-        InEq(k, 'nil'),
+        InEq(n, 'xxx'),
+        InEq(k, 'xxx'),
 	Uniq('INITSYS')]->
     [!PubParams(n, k, t),
       Out(<n, k>)]
@@ -127,7 +127,7 @@ rule INIT_BLOG:
      [
       //!CLM_RGX($C, pk(ltkC), rgxC),		// Persistent fact that C is associated with rgxC, 
 						// Do not consume StStateInitCLM. --Zhiguo
-      L_Blog($B, ~blogid, 'nil') // the log maintained by the
+      L_Blog($B, ~blogid, 'xxx') // the log maintained by the
                                           // CLM is for domains whose
                                           // name is an instence of
                                           // regular expression RGX1
@@ -136,94 +136,25 @@ rule INIT_BLOG:
 
   /* Initialisation: Certificate authorities*/
 
-  rule INIT_CA1:
-  let q = < 'Init_CA1', '1', $CA>
+  rule INIT_CA:
+  let q = < 'Init_CA', CAid, $CA>
   in
   [  In(q),
-     Fr(~ltkCA) ]
-//     !PubParams(n, k, t)]
+     Fr(~ltkCA),
+     !PubParams(n, k, t)]
   --[
      Is_Type('CA', $CA),
-     Uniq(<'CA', $CA>),
-     Uniq(<'CA1'>)		// Multiple CAs needed, each one is init only once
+     Uniq(<'CA', $CA>),		// Multiple CAs needed, each one is init only once
+     Uniq(<'CA', CAid>),		// Multiple CAs needed, each one is init only once
+     IsIn(CAid, n)		// $CA is in form of '1'+...+'1'
      ]->
 
   [ !Ltk($CA, ~ltkCA),
     !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
-    !Pmap('1', $CA),
+    !Pmap( CAid, $CA ),
     Out(pk(~ltkCA))
   ]
 
-  rule INIT_CA2:
-  let q = < 'Init_CA2', '2', $CA>
-  in
-  [  In(q),
-     Fr(~ltkCA)]
-//     !PubParams(n, k, t)]
-  --[
-     Is_Type('CA', $CA),
-     Uniq(<'CA', $CA>),
-     Uniq(<'CA2'>)		// Multiple CAs needed, each one is init only once
-     ]->
-
-  [ !Ltk($CA, ~ltkCA),
-    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
-    !Pmap('2', $CA),
-    Out(pk(~ltkCA))
-  ]
-
-  rule INIT_CA3:
-  let q = < 'Init_CA3', '3', $CA>
-  in
-  [  In(q),
-     Fr(~ltkCA)]
-//     !PubParams(n, k, t)]
-  --[
-     Is_Type('CA', $CA),
-     Uniq(<'CA', $CA>),
-     Uniq(<'CA3'>)		// Multiple CAs needed, each one is init only once
-     ]->
-
-  [ !Ltk($CA, ~ltkCA),
-    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
-    !Pmap('3', $CA),
-    Out(pk(~ltkCA))
-  ]
-
-  rule INIT_CA4:
-  let q = < 'Init_CA4', '4', $CA>
-  in
-  [  In(q),
-     Fr(~ltkCA)]
-//     !PubParams(n, k, t)]
-  --[
-     Is_Type('CA', $CA),
-     Uniq(<'CA', $CA>),
-     Uniq(<'CA4'>)		// Multiple CAs needed, each one is init only once
-     ]->
-
-  [ !Ltk($CA, ~ltkCA),
-    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
-    !Pmap('4', $CA),
-    Out(pk(~ltkCA))
-  ]
-
-  rule INIT_CA5:
-  let q = < 'Init_CA5', '5', $CA>
-  in
-  [  In(q),
-     Fr(~ltkCA)]
-  --[
-     Is_Type('CA', $CA),
-     Uniq(<'CA', $CA>),
-     Uniq(<'CA5'>)		// Multiple CAs needed, each one is init only once
-     ]->
-
-  [ !Ltk($CA, ~ltkCA),
-    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
-    !Pmap('5', $CA),
-    Out(pk(~ltkCA))
-  ]
 
   /* Compromise a CA */
 
@@ -266,8 +197,8 @@ rule INIT_DOMAIN:
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),
     !DomainInfo($D, ~Did, pk(~ltkD)),
-    L_Sigs_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
-    Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. Zhiguo
+    L_Sigs_List($D, ~Did, 'xxx', 'xxx', 'xxx'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
+    Sigs_Check_List($D, ~Did, 'xxx'),		// To store sigs that have been verified. Zhiguo
     Out(pk(~ltkD))
     ]
 
@@ -320,7 +251,6 @@ rule CREATE_CERT_PHASE_2:
      L_Sigs_List($D, Did, Sigs, CA_pks, nSigs),	// Update current Sigs_List, add a new sig into it. Zhiguo
      In(Sig_full),
      !DomainInfo($D, Did, ltpkD),
-     !Pmap(CAid, $CA),
      !Pk($CA,ltpkCA),			// CA -- ltpkCA -- Sig -- CAs, Sigs---All bind together.
      !Pk($D, ltpkD)			// restriction fact for domain D, otherwise ltpkD may not be equal to pk(ltkD).
     ]
@@ -332,7 +262,7 @@ rule CREATE_CERT_PHASE_2:
 					// 12.9: not needed cos Uniq above.
      Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
-    [L_Sigs_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' )]   // Added into Sigs_List after checking. Zhiguo
+    [L_Sigs_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '123' )]   // Added into Sigs_List after checking. Zhiguo
 					// Sigs include Sig_full because Sig_full include $D and Did information
 					// CA is a single symbol, i.e. 1 or 2 or 3 etc. 
 
@@ -355,6 +285,7 @@ rule CREATE_CERT_PHASE_3:
 /* Submit k signatures, and check each signature separately */ 
 rule CREATE_CERT_PHASE_4: 
    let 
+//      Sig = sign( <'DomainCert', $D, ltpkD>, ltkCA)
       Sig_full = <$D, Did, Sig, $CA>
    in
     [
@@ -369,10 +300,11 @@ rule CREATE_CERT_PHASE_4:
     Is_Type('Domain', $D),
     Is_Type('CA', $CA),
     Uniq(<'BLM_CheckSig', $D, Did, $CA>),	// The CA's sig for is checked for only once.
+//    IsIn(Sig_full, Sigs),	// Received Sigs include a valid signature.
     Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [
-    Sigs_Check_List($D, Did, Sigs_Checked + '1')
+    Sigs_Check_List($D, Did, Sigs_Checked + Sig_full)
     ]
 
 rule CREATE_CERT_PHASE_5:
@@ -381,7 +313,7 @@ rule CREATE_CERT_PHASE_5:
     Sigs_Check_List($D, Did, Sigs_Checked)
     ]
   --[
-    Eq(nSigs, Sigs_Checked),		// All sigs have been checked.
+    SubsetEq(Sigs, Sigs_Checked),		// All sigs have been checked.
     Accept($D, Did, Sigs, CA_pks)
     ]->
     [
