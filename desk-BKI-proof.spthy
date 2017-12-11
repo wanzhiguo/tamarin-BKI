@@ -210,6 +210,16 @@ rule INIT_BLOG:
     ]
   
 
+  rule COMPROMISE_t_CAs:
+    [
+   !PubParams(n,k,t),
+   Compromised_CAs(Compromised_CA_List)
+    ]
+   --[
+   Eq(t+'nil', Compromised_CA_List),
+   T_CAs_Compromised(Compromised_CA_List)
+    ]->[
+    ]
   /* Compromise a BLM */
 
   rule COMPROMISE_BLM:
@@ -238,6 +248,8 @@ rule INIT_DOMAIN:
     !DomainInfo($D, ~Did, pk(~ltkD)),
     Sigs_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
     L_Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. Zhiguo
+    Sigs_Revoke_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
+    L_Sigs_Revoke_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. Zhiguo
     Out(pk(~ltkD))
     ]
 
@@ -352,7 +364,7 @@ rule CHECK_CERT_REQUEST_4:
 
 rule ISSUE_CERT_5:
     let
-       record = sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB)
+       record = < sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB), $D, Did, 'Valid' >
     in
     [
     !Sigs_List_Final($D, Did,  Sigs, CA_pks, nSigs),
@@ -372,6 +384,153 @@ rule ISSUE_CERT_5:
     L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
     ]
 
+
+  /* Request certificate revocation from CAs */
+rule DOMAIN_REQUEST_REVOKE_SIG_0:
+      let request= <'RevokeCert', $D, Did, ltpkD>
+     in
+     [
+      !DomainInfo($D, Did, ltpkD)
+     ]
+  --[
+     Is_Type('Domain', $D)
+     ]->
+    [
+     Out_S($D, $CA, request)     // Obtain a signature from CA--Need k Sigs for a certificate.
+    ]
+
+
+  /* Domain requests signatures from at least t CAs
+     This should be offline, or a secure out-of-band channel. Zhiguo
+     */
+rule CA_GENERATE_REVOKE_SIG_1:
+  let request= <'RevokeCert', $D, Did, ltpkD>
+      Sig = sign( <'RevokeCert', $D, Did, ltpkD>, ltkCA)
+      Sig_full = <$D, Did, Sig, $CA>
+  in
+     [
+      In_S($D, $CA, request),
+      !Ltk($CA, ltkCA),			// Must have private key to sign the request.
+      !Pk($D, ltpkD),
+      !DomainInfo($D, Did, ltpkD)
+     ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA),
+     Uniq(<'ObtainRevokeSig', $D, Did, $CA>)		// A CA only provides a single signature
+     ]->
+    [
+     Out_S($CA, $D, Sig_full)     // Obtain a signature from CA--Need k Sigs for a certificate.
+    ]
+  
+  /* Collect sigs from CAs
+     */
+rule DOMAIN_RECIEVE_REVOKE_SIG_2:
+   let
+       Sig_full = <$D, Did, Sig, $CA>
+   in
+
+    [
+     In_S($CA, $D, Sig_full),
+     Sigs_Revoke_List($D, Did, Sigs, CA_pks, nSigs),	// Update current Sigs_List, add a new sig into it. Zhiguo
+     !DomainInfo($D, Did, ltpkD),
+     !Pk($CA,ltpkCA),			// CA -- ltpkCA -- Sig -- CAs, Sigs---All bind together.
+     !Pk($D, ltpkD)			// restriction fact for domain D, otherwise ltpkD may not be equal to pk(ltkD).
+    ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA),
+     Uniq( < 'Domain_CheckRevokeSig', $D, Did, $CA > ),		// A CA only provides a single signature, make it different from PHASE_1
+     Eq(verify(Sig, <'RevokeCert', $D, Did, ltpkD>, ltpkCA), true )
+    ]->
+    [Sigs_Revoke_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' )
+     ]   // Added into Sigs_List after checking. Zhiguo
+					// Sigs include Sig_full because Sig_full include $D and Did information
+					// CA is a single symbol, i.e. 1 or 2 or 3 etc. 
+
+/* If k sigs have been collected, domain owner submits it to BLMs for logging. 
+  */
+rule CREATE_CERT_REVOKE_REQUEST_3:
+    let Cert_revoke_request = <$D, Did, Sigs, CA_pks>
+    in
+    [
+    !PubParams(n, k, t),
+    !DomainInfo($D, Did, ltpkD),
+    Sigs_Revoke_List($D, Did, Sigs, CA_pks, nSigs)
+    ]
+  --[
+    Is_Type('Domain', $D),
+    Eq(t+'nil', nSigs)		// 
+    ]->
+    [
+    !Sigs_Revoke_List_Final($D, Did, Sigs, CA_pks, nSigs),	// This list is consumed at Phase_5 by BLM
+    Out( Cert_revoke_request )
+    ]
+/* Submit t signatures, and check each signature separately */ 
+rule CHECK_CERT_REVOKE_REQUEST_4: 
+   let 
+//      Sig = sign( <'DomainCert', $D, ltpkD>, ltkCA)
+      Sig_full = <$D, Did, Sig, $CA>
+      Cert_revoke_request = <$D, Did, Sigs, CA_pks>
+   in
+    [
+    In(Sig_full),
+    In(Cert_revoke_request),
+    !DomainInfo($D, Did, ltpkD),
+    L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked),
+    !Pk($CA, ltpkCA),
+    !Pk($D, ltpkD)
+    ]
+  --[
+    Is_Type('Domain', $D),
+    Is_Type('CA', $CA),
+    Uniq(<'BLM_CheckRevokeSig', $D, Did, $CA>),	// The CA's sig for is checked for only once.
+    IsIn(Sig_full, Sigs),	// Received Sigs include a valid signature.
+    Eq(verify(Sig, <'RevokeCert', $D, Did, ltpkD>, ltpkCA), true )
+    ]->
+    [
+    L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked + '1')
+    ]
+
+rule REVOKE_CERT_5:
+    let
+       record = < sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB), $D, Did, 'Invalidated' >
+    in
+    [
+    !Sigs_Revoke_List_Final($D, Did,  Sigs, CA_pks, nSigs),
+    !PubParams(n,k,t),
+    L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked),
+    !Ltk($B, ltkB),
+    !Pk($D, ltpkD),
+    L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
+    ]
+  --[
+    Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
+    Is_Type('BLM', $B),
+    Accept_Revoke($D, Did, Sigs, CA_pks)
+    ]->
+    [
+    Cert_Revoked($D, Sigs, CA_pks),
+    L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
+    ]
+
+/*
+rule CA_REVOKE_CERT_1:
+    let request = <'RevokeCert', $D, Did, record>
+        record = < Sig, $D, Did, 'Valid' >
+    in 
+    [
+    In(request),
+    L_Blog($B, blogid, blog),
+    !DomainInfo($D, Did, ltpkD),
+    ]--[
+    IsIn(record, blog),
+    Eq(verify(Sig, < $D, Did, Sigs, CA_pks, ltpkD >, ltpkB), true)
+    ]->
+    [
+    L_Blog($B, blogid, blog),
+    ]
+*/    
 
 /* Security property 1.
    Adversary need to compromise at least k CAs to get an invalid cert issued 
@@ -414,11 +573,11 @@ lemma revoke_cert_issued_more_than_t_compromised:
    /* If a domain has its cert successfully issued on the blockchain
    */
 
-    (Accept(D, Did, Sigs, CA_pks) @ #i1
+    (Accept_Revoke(D, Did, Sigs, CA_pks) @ #i1
 
 /* and less than k CAs have been compromised */
    &   not (Ex #i2 Compromised_CA_List.
-                K_CAs_Compromised(Compromised_CA_List) @ #i2)
+                T_CAs_Compromised(Compromised_CA_List) @ #i2)
 
 /* and BLM is not compromised */
    &   not (Ex #i3 B ltkB.
