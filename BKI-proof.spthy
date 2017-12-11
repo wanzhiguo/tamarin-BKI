@@ -25,7 +25,7 @@ theory BKI_protocol_security
       keys. However, in contrast with today's CAs, the ability of CAs
       in DTKI is limited since the issuance of a certificate from a CA
       is not enough to convince web browsers to accept the certificate
-      (proof of presence in the relevant CLM is also needed).
+      (proof of presence in the relevant BLM is also needed).
     - Domain Servers
     - BLM
 
@@ -36,7 +36,7 @@ theory BKI_protocol_security
     infrastructure servers in DTKI. In other words, the adversary can
     collude with all log servers and certificate authorities to launch
     attacks. In addition, we assume that each domain server can
-    securely setup a master key with the corresponding CLM, and will
+    securely setup a master key with the corresponding BLM, and will
     be able to keep the master key private.
 
     =======Protocol=======
@@ -130,9 +130,9 @@ rule INIT_SYSTEM_PARAMS:
 	Uniq('INITSYS')]->
     [!PubParams(n, k, t),
      Compromised_CAs('nil'),
-      Out(<n, k>)]
+      Out(<n, k, t>)]
 
-/*Initialisation: Certificate log maintainer CLM1. */
+/*Initialisation: Certificate log maintainer BLM. */
 
 rule INIT_BLM:
     [ Fr(~ltkB)
@@ -210,7 +210,7 @@ rule INIT_BLOG:
    Compromised_CAs(Compromised_CA_List)
     ]
    --[
-   Eq(k+'nil', Compromised_CA_List),
+   Eq(k+'nil', Compromised_CA_List),			// k CAs are compromised
    K_CAs_Compromised(Compromised_CA_List)
     ]->[
     ]
