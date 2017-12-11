@@ -1,15 +1,17 @@
-/* Provide hints for Tamarin's heuristics.  In this case, we tell
-   Tamarin to delay (make "Last", "L_") finding the sources for the
-   Sigs_Check_List fact, since it doesn't provide useful information and can
-   lead to non-termination.  */
-
-/* In this proof, we use several abstractions. For example, we treat
-   our log structure as a list to record simplified data item. */
+/* In this proof, strategies we adopt are:
+   1. Secure channels are modelled between Domain and CAs with rules from tamarin manual.
+   2. Log on blockchain is modelled as a list of records, and it is append-only;
+   3. CAs' identities are modelled as '1', '1'+'1', '1'+'1'+'1', ...; There can be unlimited number of CAs.
+   4. The model support any combination of k CAs to issue certs, any combination of t CAs to revoke certs.
+   5. BLMs are modelled as single trusted BLM, as we assume the blockchain is securely maintained with consensus algorithms.
+*/
 
 
 theory BKI_protocol_security
 
-/* Author: Zhiguo Wan*/
+/* Author: Zhiguo Wan, wanzhiguo@sdu.edu.cn
+   Shandong University
+*/
 
 /*
     =======Entity=======
@@ -21,6 +23,8 @@ theory BKI_protocol_security
       in DTKI is limited since the issuance of a certificate from a CA
       is not enough to convince web browsers to accept the certificate
       (proof of presence in the relevant CLM is also needed).
+    - Domain Servers
+    - BLM
 
 
     =======Adversary model=======
@@ -33,7 +37,7 @@ theory BKI_protocol_security
     be able to keep the master key private.
 
     =======Protocol=======
-
+    See our paper on Securecomm'17.
 
     =======Notes=======
 
