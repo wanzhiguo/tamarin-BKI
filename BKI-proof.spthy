@@ -1,16 +1,20 @@
-/* Provide hints for Tamarin's heuristics.  In this case, we tell
-   Tamarin to delay (make "Last", "L_") finding the sources for the
-   LogDevice fact, since it doesn't provide useful information and can
-   lead to non-termination. It is similar for LogCloud, but the trace
-   is found faster if we don't use L_ for that. */
+/* In this proof, strategies we adopt are:
+   1. Secure channels are modelled between Domain and CAs with rules from tamarin manual.
+   2. Log on blockchain is modelled as a list of records, and it is append-only;
+   3. CAs' identities are modelled as '1', '1'+'1', '1'+'1'+'1', ...; There can be unlimited number of CAs.
+   4. The model support any combination of k CAs to issue certs, any combination of t CAs to revoke certs.
+   5. BLMs are modelled as single trusted BLM, as we assume the blockchain is securely maintained with consensus algorithms.
 
-/* In this proof, we use several abstractions. For example, we treat
-   our log structure as a list to record simplified data item. */
+To run the proof:
+   tamarin-prover --prove BKI-proof.spthy -Dsecure1 -Dsecure2
+*/
 
 
-theory BKI_protocol_correctness
+theory BKI_protocol_security
 
-/* Author: Zhiguo Wan*/
+/* Author: Zhiguo Wan, wanzhiguo@sdu.edu.cn
+   Shandong University
+*/
 
 /*
     =======Entity=======
@@ -22,6 +26,8 @@ theory BKI_protocol_correctness
       in DTKI is limited since the issuance of a certificate from a CA
       is not enough to convince web browsers to accept the certificate
       (proof of presence in the relevant CLM is also needed).
+    - Domain Servers
+    - BLM
 
 
     =======Adversary model=======
@@ -34,7 +40,7 @@ theory BKI_protocol_correctness
     be able to keep the master key private.
 
     =======Protocol=======
-
+    See our paper on Securecomm'17.
 
     =======Notes=======
 
@@ -72,38 +78,67 @@ equations:
 
 
 restriction Unique: "All x #i #j. Uniq(x) @ i & Uniq(x) @ j ==> #i = #j"
-// Instead of using the restriction for "x < y" directly,
-// restriction Less:   "All x y #i. Less(x,y) @ i ==> Ex z. x + z = y"
-// we use two restrictions for "x <> y" and "not (y < x)"
-restriction Less1:   "not (Ex x #i. Less(x,x) @ i)"
-restriction Less2:   "not (Ex x y #i. Less(x+y,x) @ i)"
 restriction InEq:   "not (Ex x #i. InEq(x,x) @ i)"
+restriction types_distinct:
+  "(All t1 t2 x #i #j. (Is_Type(t1,x)@i & Is_Type(t2,x)@j) ==> (t1 = t2))"
+
+restriction eq_check_succeed:
+  "All x y #i. Eq(x,y) @ i ==> x = y"
+
+restriction neq_check_succeed:
+  "All x y #i. Neq(x,y) @ i ==> not (x = y)"
+
+restriction notin_check_succeed:
+  "All x l #i. NotIn(x,l) @ i ==> not (Ex rest. x+rest = l)"
+
+restriction in_check_succeed:
+  "All x l #i. IsIn(x,l) @ i ==> Ex rest. x+rest = l"
+
+restriction subseteq_check_succeed:
+  "All l m #i. SubsetEq(l,m) @ i ==> ( ( l = m ) | (Ex rest. l+rest = m) )"
+
+
+
+/* Secure channel between Domain and CAs, it is authentic and confidential.
+   1. When domain requests sigs from CAs;
+   2. When domain requests revocation sigs from CAs.
+*/
+rule ChanOut_S:
+        [ Out_S($A,$B,x) ]
+      --[ ChanOut_S($A,$B,x) ]->
+        [ !Sec($A,$B,x) ]
+
+rule ChanIn_S:
+        [ !Sec($A,$B,x) ]
+      --[ ChanIn_S($A,$B,x) ]->
+        [ In_S($A,$B,x) ]
 
 
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '123'+'123'+'123'
-        k = '123'+'123'
-//        t = '1'
-	Init = <'INITSYS', n, k, t>	//Init is feeded by adversary
+//        n = '1'+'1'+'1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+//        k = '1'+'1'+'1'			// k out of n CAs required to issue a cert.
+//        t = '1'				// t CAs to revoke a cert.
+	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
     --[ SubsetEq(k, n),
         SubsetEq(t, k),
-        InEq(n, 'xxx'),
-        InEq(k, 'xxx'),
-	Only_One('INITSYS')]->
+        InEq(n, 'nil'),
+        InEq(k, 'nil'),
+	Uniq('INITSYS')]->
     [!PubParams(n, k, t),
+     Compromised_CAs('nil'),
       Out(<n, k>)]
 
 /*Initialisation: Certificate log maintainer CLM1. */
 
 rule INIT_BLM:
     [ Fr(~ltkB)
-      ]		// Assume rgxC is fresh and associated with C. --Zhiguo
+      ]		
   --[ Is_Type('BLM', $B),
-      Only_One('INITBLM') // 
+      Uniq('INITBLM') 
     ]->
     [ !Ltk($B, ~ltkB),
       !Pk($B, pk(~ltkB)),
@@ -122,36 +157,31 @@ rule INIT_BLOG:
       Fr(~blogid)
      ]
    --[ Is_Type('BLM', $B),
-       Only_One('BLOG') // Each log maintainer has only one log.
+       Uniq('BLOG') 				// Log is initialized only once
      ]->
      [
-      //!CLM_RGX($C, pk(ltkC), rgxC),		// Persistent fact that C is associated with rgxC, 
-						// Do not consume StStateInitCLM. --Zhiguo
-      L_Blog($B, ~blogid, 'xxx') // the log maintained by the
-                                          // CLM is for domains whose
-                                          // name is an instence of
-                                          // regular expression RGX1
+      L_Blog($B, ~blogid, 'nil') 		// the log maintained by the BLM 
      ]
 
 
   /* Initialisation: Certificate authorities*/
 
   rule INIT_CA:
-  let q = < 'Init_CA', i, $CA>
+  let q = < 'Init_CA', CAid, $CA>
   in
   [  In(q),
      Fr(~ltkCA),
      !PubParams(n, k, t)]
   --[
      Is_Type('CA', $CA),
-     Uniq(<'CA', i>),		// i is the identity of CA
      Uniq(<'CA', $CA>),		// Multiple CAs needed, each one is init only once
-     IsIn(i, n)		// $CA is in form of '1'+...+'1'
+     Uniq(<'CA', CAid>),	
+     IsIn(CAid, n+'1')		// $CA is in form of '1'+...+'1'
      ]->
 
   [ !Ltk($CA, ~ltkCA),
-    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. Zhiguo
-    !Pmap( $CA, i),		// A mapping recording CAs' identities
+    !Pk($CA, pk(~ltkCA)),	// bind CA with its public key ltkCA. 
+    !Pmap( CAid, $CA ),
     Out(pk(~ltkCA))
   ]
 
@@ -159,19 +189,46 @@ rule INIT_BLOG:
   /* Compromise a CA */
 
   rule COMPROMISE_CA:
-          [ !Ltk($CA, ltkCA)
-          ]
+   [ !Ltk($CA, ltkCA),
+     Compromised_CAs(Compromised_CA_List)
+    ]
   --[
      Is_Type('CA', $CA),
+     Uniq(<'Compromise_CA', $CA>),
      Compromise_CA($CA,ltkCA)
      ]->
 
   [
+   Compromised_CAs(Compromised_CA_List+'1'),
    Out(ltkCA)
   ]
   
-
-  /* Compromise a BLM */
+  /* Compromise k CAs */
+  rule COMPROMISE_k_CAs:
+    [
+   !PubParams(n,k,t),
+   Compromised_CAs(Compromised_CA_List)
+    ]
+   --[
+   Eq(k+'nil', Compromised_CA_List),
+   K_CAs_Compromised(Compromised_CA_List)
+    ]->[
+    ]
+  
+  /* Compromise t CAs */
+  rule COMPROMISE_t_CAs:
+    [
+   !PubParams(n,k,t),
+   Compromised_CAs(Compromised_CA_List)
+    ]
+   --[
+   Eq(t+'nil', Compromised_CA_List),
+   T_CAs_Compromised(Compromised_CA_List)
+    ]->[
+    ]
+  /* Compromise a BLM.
+     BLM is modeled as a trusted pary, to represent the blockchain maintainer.
+    */
 
   rule COMPROMISE_BLM:
           [ !Ltk($B, ltkB)
@@ -193,209 +250,364 @@ rule INIT_DOMAIN:
        Fr(~Did)
      ]
   --[ Is_Type('Domain', $D), 
-      Uniq(< 'Domain', ~Did, $D >),
-      Uniq(<'INIT_DOMAIN', ~Did, $D>) ]->	// A domain initialze once --Zhiguo
+      Uniq( < 'Init_Domain', $D > ) ]->	// A domain is initialze only once 
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),
     !DomainInfo($D, ~Did, pk(~ltkD)),
-    LocalRecord($D, '0'),
-    Sigs_List($D, ~Did, 'xxx', 'xxx', 'xxx'),	// The first list is sigs_list, the second is CA_list
-    Sigs_Check_List($D, ~Did, 'xxx'),		// To store sigs that have been verified. Zhiguo
-    //MasterKey($D, pk(~ltkD)),
+    Sigs_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
+    L_Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. 
+    Sigs_Revoke_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
+    L_Sigs_Revoke_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. 
     Out(pk(~ltkD))
     ]
 
-  /* Request a certificate from CAs */
-rule REQUEST_CERT:
-          let request= <'RequestCert', $D, Did, ltpkD>
-            in
+  /* Domain request a certificate from CAs */
+rule DOMAIN_REQUEST_SIG_0:
+      let request= <'RequestCert', $D, Did, ltpkD>
+     in
      [
       !DomainInfo($D, Did, ltpkD)
-      //MasterKey($D, ltpkD)
      ]
   --[
      Is_Type('Domain', $D)
-     //Is_Type('CA', $CA)
      ]->
     [
-     Out(request)
+     Out_S($D, $CA, request)     
     ]
 
 
   /* Domain requests signatures from at least k CAs
      This should be offline, or a secure out-of-band channel. Zhiguo
      */
-rule CREATE_CERT_PHASE_1:
+rule CA_GENERATE_SIG_1:
   let request= <'RequestCert', $D, Did, ltpkD>
       Sig = sign( <'DomainCert', $D, Did, ltpkD>, ltkCA)
-      Sig_full = <$D, Did, Sig, i, $CA>
+      Sig_full = <$D, Did, Sig, $CA>
   in
      [
-      In(request),
-      !Ltk($CA, ltkCA),
-      !Pmap($CA, i),
-      !Pk($D, ltpkD)
+      In_S($D, $CA, request),
+      !Ltk($CA, ltkCA),				// Must have private key to sign the request.
+      !Pk($D, ltpkD),
+      !DomainInfo($D, Did, ltpkD)
      ]
   --[
      Is_Type('Domain', $D),
      Is_Type('CA', $CA),
-     Start_Role(<'CCP','CA'>,<$CA, $D>),
-     Uniq(<'ObtainSig', $D, Did, i, $CA>)		// A CA only provides a single signature
+     Uniq(<'ObtainSig', $D, Did, $CA>)		// A CA only provides a single signature
      ]->
     [
-     Out(Sig_full)     // Obtain a signature from CA--Need k Sigs for a certificate.
+     Out_S($CA, $D, Sig_full)     		// Obtain a signature from CA--Need k Sigs for a certificate.
     ]
   
   /* Collect sigs from CAs
      */
-rule CREATE_CERT_PHASE_2:
+rule DOMAIN_RECIEVE_SIG_2:
    let
-       Sig = sign( <'DomainCert', $D, Did, ltpkD>, ltkCA)
-       Sig_full = <$D, Did, Sig, i, $CA>
+       Sig_full = <$D, Did, Sig, $CA>
    in
 
     [
-     Sigs_List($D, Did, Sigs, CAs, nSigs),	// Update current Sigs_List, add a new sig into it. Zhiguo
-     In(Sig_full),
-     !Pk($CA,ltpkCA),			// CA -- ltpkCA -- Sig -- CAs, Sigs---All bind together.
-     !Pk($D, ltpkD),			// restriction fact for domain D, otherwise ltpkD may not be equal to pk(ltkD).
-     !Pmap($CA, i)
+     In_S($CA, $D, Sig_full),
+     Sigs_List($D, Did, Sigs, CA_pks, nSigs),	// Update current Sigs_List, add a new sig into it. 
+     !DomainInfo($D, Did, ltpkD),
+     !Pk($CA,ltpkCA),				// CA -- ltpkCA
+     !Pk($D, ltpkD)				// restriction fact for domain D
     ]
   --[
      Is_Type('Domain', $D),
      Is_Type('CA', $CA),
-     Uniq( < 'CheckSig', $D, Did, i, $CA > ),		// A CA only provides a single signature, make it different from PHASE_1
-     NotIn( < i, $CA >, CAs),		// This CA has not provided a signature for the Domain.
-     Eq(ltpkCA,pk(ltkCA)),
+     Uniq( < 'Domain_CheckSig', $D, Did, $CA > ),		// A CA only provides a single signature, 
      Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
-    [Sigs_List($D, Sigs + Sig_full, CAs + < i, $CA >, nSigs + '123')]   // Added into Sigs_List after checking. Zhiguo
+    [Sigs_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' )
+     ]   // Added into Sigs_List after checking. Zhiguo
 					// Sigs include Sig_full because Sig_full include $D and Did information
+					// CA is a single symbol, i.e. 1 or 2 or 3 etc. 
 
 /* If k sigs have been collected, domain owner submits it to BLMs for logging. 
   */
-rule CREATE_CERT_PHASE_3:
+rule CREATE_CERT_REQUEST_3:
+    let Cert_request = <$D, Did, Sigs, CA_pks>
+    in
     [
     !PubParams(n, k, t),
-    Sigs_List($D, Did, Sigs, CAs, nSigs)
+    !DomainInfo($D, Did, ltpkD),
+    Sigs_List($D, Did, Sigs, CA_pks, nSigs)
     ]
   --[
     Is_Type('Domain', $D),
-    //Is_Type('CA', $CA),
-    SubsetEq(k, nSigs)		// k = k '1'. If k is in nSigs, then k Sigs are collected by domain owner.
+    Eq(k+'nil', nSigs)		// k = '1'+'1'+.... If k is in nSigs, then k Sigs are collected by domain owner
+				// Note nSigs is initialized with 'nil', so we let k+'nil'
     ]->
     [
-    !Sigs_List_Final($D, Did, Sigs, CAs, nSigs)	// This list is consumed at Phase_5 by BLM
-    //Out(Sigs)
+    !Sigs_List_Final($D, Did, Sigs, CA_pks, nSigs),	// This list is used at Phase_5 by BLM
+    Out( Cert_request )
     ]
-
-/* Received k signatures, and check each signature separately */
-rule CREATE_CERT_PHASE_4:
+/* Submit k signatures, and check each signature separately */ 
+rule CHECK_CERT_REQUEST_4: 
    let 
-      Sig = sign( <'DomainCert', $D, Did, ltpkD>, ltkCA)
-      Sig_full = <$D, Did, Sig, i, $CA>
+//      Sig = sign( <'DomainCert', $D, ltpkD>, ltkCA)
+      Sig_full = <$D, Did, Sig, $CA>
+      Cert_request = <$D, Did, Sigs, CA_pks>
    in
     [
-    In(Sig),
-    //In(Sigs),
-    !Sigs_List_Final($D, Did, Sigs, CAs, nSigs),	// This list is consumed at Phase_5 by BLM
-    Sigs_Check_List($D, Did, Sigs_Checked),
-    !Pmap($CA, i),
+    In(Sig_full),
+    In(Cert_request),
+    !DomainInfo($D, Did, ltpkD),
+    L_Sigs_Check_List($D, Did, Sigs_Checked),
     !Pk($CA, ltpkCA),
     !Pk($D, ltpkD)
     ]
   --[
     Is_Type('Domain', $D),
     Is_Type('CA', $CA),
-    Uniq(<'CheckSig', $D, $CA>),	// The CA's sig for is checked for only once.
-    IsIn(Sig_full, Sigs),	// Received Sigs include a valid signature.
-    Eq(verify(Sig, <'DomainCert', $D, ltpkD>, ltpkCA), true )
+    Uniq(<'BLM_CheckSig', $D, Did, $CA>),	// The CA's sig for is checked for only once.
+    IsIn(Sig_full, Sigs),			// Received Sigs include a valid signature.
+    Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [
-    Sigs_Check_List($D, Sigs_Checked + Sig_full)
+    L_Sigs_Check_List($D, Did, Sigs_Checked + '1')
     ]
 
-rule CREATE_CERT_PHASE_5:
-//    let
-//      Proof_BLM = sign( <'AddedByBLM', Sigs>, ltkB)
-//    in
+rule ISSUE_CERT_5:
+    let
+       record = < sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB), $D, Did, 'Valid' >
+    in
     [
-    !Sigs_List_Final($D,  Sigs, CAs, nSigs),
-    Sigs_Check_List($D, Sigs_Checked)
-//    L_Blog($B, blogid, blog),
-//    !Ltk($B, ltkB)
+    !Sigs_List_Final($D, Did,  Sigs, CA_pks, nSigs),
+    !PubParams(n,k,t),
+    L_Sigs_Check_List($D, Did, Sigs_Checked),
+    !Ltk($B, ltkB),
+    !Pk($D, ltpkD),
+    L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
     ]
   --[
-    Is_Type('BLM', $B),				// otherwise CA is used as B here.
-    SubsetEq(Sigs, Sigs_Checked),		// All sigs have been checked.
-    Accept($D, Sigs, CAs)
+    Eq(k+'nil', Sigs_Checked),			// All sigs have been checked.
+    Is_Type('BLM', $B),
+    Accept($D, Did, Sigs, CA_pks)
     ]->
     [
-//    L_Blog($B, blogid, blog + <$D, Sigs, nSigs>),
-//    Out(Proof_BLM),
-    Cert_Issued($D, Sigs, CAs)
+    Cert_Issued($D, Sigs, CA_pks),
+    L_Blog($B, blogid, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
-//rule CREATE_CERT_FINAL:
-//    [Cert_Issued($D, Sigs, CAs)]
-//  --[
-//     Accept($D, Sigs, CAs)]->
-//    [ ]
 
-restriction only_one:
-  "(All x #i #j. (Only_One(x)@i & Only_One(x)@j) ==> (#i = #j))"
-
-//restriction only_one2:
-//  "(All x y #i #j. (Only_One2(x,y)@i & Only_One2(x,y)@j) ==> (#i = #j))"
-
-restriction only_one4:
-  "(All x y z w #i #j. (Only_One3(x,y,z,w)@i & Only_One3(x,y,z,w)@j) ==> (#i = #j))"
-
-restriction bound_domain_rgx:
-  "(All x y1 y2 #i #j. (Bind_Domain_RGX(x,y1)@i & Bind_Domain_RGX(x,y2)@j) ==> (#i = #j) & (y1 = y2))"
-
-restriction types_distinct:
-  "(All t1 t2 x #i #j. (Is_Type(t1,x)@i & Is_Type(t2,x)@j) ==> (t1 = t2))"
-
-restriction eq_check_succeed:
-  "All x y #i. Eq(x,y) @ i ==> x = y"
-
-restriction neq_check_succeed:
-  "All x y #i. Neq(x,y) @ i ==> not (x = y)"
-
-restriction notin_check_succeed:
-  "All x l #i. NotIn(x,l) @ i ==> not (Ex rest. x+rest = l)"
-
-restriction in_check_succeed:
-  "All x l #i. IsIn(x,l) @ i ==> Ex rest. x+rest = l"
+  /* Request certificate revocation from CAs */
+rule DOMAIN_REQUEST_REVOKE_SIG_0:
+      let request= <'RevokeCert', $D, Did, ltpkD>		// Different from cert request
+     in
+     [
+      !DomainInfo($D, Did, ltpkD)
+     ]
+  --[
+     Is_Type('Domain', $D)
+     ]->
+    [
+     Out_S($D, $CA, request)     		// Obtain a signature from CA--Need k Sigs for a certificate.
+    ]
 
 
-restriction subseteq_check_succeed:
-  "All l m #i. SubsetEq(l,m) @ i ==> ( ( l = m ) | (Ex rest. l+rest = m) )"
+  /* Domain requests signatures from at least t CAs
+     This should be offline, or a secure out-of-band channel. Zhiguo
+     */
+rule CA_GENERATE_REVOKE_SIG_1:
+  let request= <'RevokeCert', $D, Did, ltpkD>
+      Sig = sign( <'RevokeCert', $D, Did, ltpkD>, ltkCA)
+      Sig_full = <$D, Did, Sig, $CA>
+  in
+     [
+      In_S($D, $CA, request),
+      !Ltk($CA, ltkCA),			// Must have private key to sign the request.
+      !Pk($D, ltpkD),
+      !DomainInfo($D, Did, ltpkD)
+     ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA),
+     Uniq(<'ObtainRevokeSig', $D, Did, $CA>)		// A CA only provides a single signature
+     ]->
+    [
+     Out_S($CA, $D, Sig_full)     // Obtain a signature from CA--Need k Sigs for a certificate.
+    ]
+  
+  /* Collect sigs from CAs
+     */
+rule DOMAIN_RECIEVE_REVOKE_SIG_2:
+   let
+       Sig_full = <$D, Did, Sig, $CA>
+   in
 
-restriction one_role_instance:
-  "(All #i #j role param1 param2 .
-     (
-     Start_Role(role,param1) @ i &
-     Start_Role(role,param2) @ j
-     )
-     ==>
-     ( #i = #j )
-   )"
+    [
+     In_S($CA, $D, Sig_full),
+     Sigs_Revoke_List($D, Did, Sigs, CA_pks, nSigs),	// Update current Sigs_List, add a new sig into it.
+     !DomainInfo($D, Did, ltpkD),
+     !Pk($CA,ltpkCA),			
+     !Pk($D, ltpkD)			// restriction fact for domain D
+    ]
+  --[
+     Is_Type('Domain', $D),
+     Is_Type('CA', $CA),
+     Uniq( < 'Domain_CheckRevokeSig', $D, Did, $CA > ),		// A CA only provides a single signature 
+     Eq(verify(Sig, <'RevokeCert', $D, Did, ltpkD>, ltpkCA), true )
+    ]->
+    [Sigs_Revoke_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' )
+     ]   // Added into Sigs_List after checking. Zhiguo
+					// Sigs include Sig_full because Sig_full include $D and Did information
+					// CA is a single symbol
 
+/* If t sigs have been collected, domain owner submits it to BLMs for logging. 
+  */
+rule CREATE_CERT_REVOKE_REQUEST_3:
+    let Cert_revoke_request = <$D, Did, Sigs, CA_pks>
+    in
+    [
+    !PubParams(n, k, t),
+    !DomainInfo($D, Did, ltpkD),
+    Sigs_Revoke_List($D, Did, Sigs, CA_pks, nSigs)
+    ]
+  --[
+    Is_Type('Domain', $D),
+    Eq(t+'nil', nSigs)		// 
+    ]->
+    [
+    !Sigs_Revoke_List_Final($D, Did, Sigs, CA_pks, nSigs),	// This list is used at Phase_5 by BLM
+    Out( Cert_revoke_request )
+    ]
+/* Submit t signatures, and check each signature separately */ 
+rule CHECK_CERT_REVOKE_REQUEST_4: 
+   let 
+//      Sig = sign( <'DomainCert', $D, ltpkD>, ltkCA)
+      Sig_full = <$D, Did, Sig, $CA>
+      Cert_revoke_request = <$D, Did, Sigs, CA_pks>
+   in
+    [
+    In(Sig_full),
+    In(Cert_revoke_request),
+    !DomainInfo($D, Did, ltpkD),
+    L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked),
+    !Pk($CA, ltpkCA),
+    !Pk($D, ltpkD)
+    ]
+  --[
+    Is_Type('Domain', $D),
+    Is_Type('CA', $CA),
+    Uniq(<'BLM_CheckRevokeSig', $D, Did, $CA>),	// The CA's sig for is checked for only once.
+    IsIn(Sig_full, Sigs),	// Received Sigs include a valid signature.
+    Eq(verify(Sig, <'RevokeCert', $D, Did, ltpkD>, ltpkCA), true )
+    ]->
+    [
+    L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked + '1')
+    ]
+
+rule REVOKE_CERT_5:
+    let
+       record = < sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB), $D, Did, 'Invalidated' >
+    in
+    [
+    !Sigs_Revoke_List_Final($D, Did,  Sigs, CA_pks, nSigs),
+    !PubParams(n,k,t),
+    L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked),
+    !Ltk($B, ltkB),
+    !Pk($D, ltpkD),
+    L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
+    ]
+  --[
+    Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
+    Is_Type('BLM', $B),
+    Accept_Revoke($D, Did, Sigs, CA_pks)
+    ]->
+    [
+    Cert_Revoked($D, Sigs, CA_pks),
+    L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
+    ]
+
+/*
+rule CA_REVOKE_CERT_1:
+    let request = <'RevokeCert', $D, Did, record>
+        record = < Sig, $D, Did, 'Valid' >
+    in 
+    [
+    In(request),
+    L_Blog($B, blogid, blog),
+    !DomainInfo($D, Did, ltpkD),
+    ]--[
+    IsIn(record, blog),
+    Eq(verify(Sig, < $D, Did, Sigs, CA_pks, ltpkD >, ltpkB), true)
+    ]->
+    [
+    L_Blog($B, blogid, blog),
+    ]
+*/    
+
+/* Security property 1.
+   Adversary need to compromise at least k CAs to get an invalid cert issued 
+   on the blockchain log.
+  */
+#ifdef secure1
+lemma invalid_cert_issued_more_than_k_compromised:
+ "
+ All D Did Sigs CA_pks #i1.
+
+   /* If a domain has its cert successfully issued on the blockchain
+   */
+
+    (Accept(D, Did, Sigs, CA_pks) @ #i1
+
+/* and less than k CAs have been compromised */
+   &   not (Ex #i2 Compromised_CA_List.
+                K_CAs_Compromised(Compromised_CA_List) @ #i2)
+
+/* and BLM is not compromised */
+   &   not (Ex #i3 B ltkB.
+                Compromise_BLM(B,ltkB) @ #i3)
+      )
+      ==>
+      ( /* the Domain must be a valid domain */
+       (Ex #i4. Is_Type('Domain', D) @ #i4)
+      )
+ "
+#endif
+
+/* Security property 2.
+   Adversary need to compromise at least t CAs to get an invalid cert revoked
+   on the blockchain log.
+  */
+#ifdef secure2
+lemma revoke_cert_issued_more_than_t_compromised:
+ "
+ All D Did Sigs CA_pks #i1.
+
+   /* If a domain has its cert successfully issued on the blockchain
+   */
+
+    (Accept_Revoke(D, Did, Sigs, CA_pks) @ #i1
+
+/* and less than k CAs have been compromised */
+   &   not (Ex #i2 Compromised_CA_List.
+                T_CAs_Compromised(Compromised_CA_List) @ #i2)
+
+/* and BLM is not compromised */
+   &   not (Ex #i3 B ltkB.
+                Compromise_BLM(B,ltkB) @ #i3)
+      )
+      ==>
+      ( /* the Domain must be a valid domain */
+       (Ex #i4. Is_Type('Domain', D) @ #i4)
+      )
+ "
+#endif
 
  /* We can run protocol correctly without having any compromised party*/
-
+#ifdef correct
 lemma protocol_correctness:
  exists-trace
  " /* It is possible that */
-   Ex D Sigs CAs #i1.
+   Ex D Did Sigs CAs #i1.
 
-   /* The user received a confirmation, i.e. hashed secret the user
-   has sent, from the network */
+   /* The domain has its cert issued to the blockchain log
+   */
 
-   //Com_Done(D, n, rgx, ltpkD, stpkD) @ #i1
-   Accept(D, Sigs, CAs) @ #i1
+   Accept(D, Did, Sigs, CAs) @ #i1
 
      /* without the adversary compromising any party. */
    &   not (Ex #i2 CA ltkCA.
@@ -405,107 +617,7 @@ lemma protocol_correctness:
                 Compromise_BLM(B,ltkB) @ #i3)
 
 "
-//lemma message_secrecy_no_compromised_party:
-// "
-// All D m rgx ltpkD stpkD #i1.
-//
-//   /* If a user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   (Com_Done(D, m, rgx, ltpkD, stpkD) @ #i1
-//
-///* and no party has been compromised */
-//   &   not (Ex #i2 CA ltkCA.
-//                Compromise_CA(CA,ltkCA) @ #i2)
-//
-//   &   not (Ex #i3 C ltkC.
-//                Compromise_CLM(C,ltkC) @ #i3)
-//
-//   &   not (Ex #i4 M ltkM.
-//                Compromise_MLM(M,ltkM) @ #i4)
-//      )
-//      ==>
-//      ( /* then the adversary cannot know m */
-//       not (Ex #i5. K(m) @ #i5)
-//      )
-// "
-//
-//lemma message_secrecy_compromise_all_domain_verified_master_cert:
-// "
-// All D m rgx ltpkD stpkD #i1.
-//
-//   /* If a user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   (Com_Done(D, m, rgx, ltpkD, stpkD) @ #i1
-//
-///* and at an earlier time, the domain server has verified his master
-//certificate */
-//
-//     & Ex #i2.
-//     VerifiedMasterCert(D, rgx, ltpkD) @ #i2 &
-//        #i2 < #i1
-///* and all parties can be compromised*/
-//      )
-//      ==>
-//      ( /* then the adversary cannot know m */
-//       not (Ex #i3. K(m) @ #i3)
-//      )
-// "
-//  /* Sanity check on verification: can finish trace with good log*/
-//
-//lemma protocol_can_finish_with_good_log:
-// exists-trace
-// "/* It is possible that */
-//   Ex D n rgx ltpkD stpkD #i1 #i2.
-//
-//   /* The user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   Com_Done(D, n, rgx, ltpkD, stpkD) @ #i1
-//
-//   /* and we check the log afterwards and find no fake records */
-//   &  #i1 < #i2
-//   &  CheckedLog(D, rgx, '0', 'good', '0') @ #i2
-//
-//   /* and the adversary did not compromise any party */
-//   &   not (Ex #i3 CA ltkCA.
-//                Compromise_CA(CA,ltkCA) @ #i3)
-//
-//   &   not (Ex #i4 C ltkC.
-//                Compromise_CLM(C,ltkC) @ #i4)
-//
-//   &   not (Ex #i5 M ltkM.
-//                Compromise_MLM(M,ltkM) @ #i5)
-//
-// "
-//
-//lemma detect_bad_records_in_the_log_when_master_cert_not_verified:
-//
-// "
-// All D m rgx ltpkD flag stpkD #i1 #i2 #i3.
-//
-//   /* If a user received a confirmation, i.e. hashed secret the user
-//   has sent, from the network */
-//
-//   (Com_Done(D, m, rgx, ltpkD, stpkD) @ #i1
-//
-///* and all parties can be compromised*/
-//
-///* and the master certificate of the domain was not initially verified */
-//
-///* and the adversary knows m */
-//
-//     &  K(m) @ #i2
-//
-///* and we afterwards check the log */
-//     &  CheckedLog(D, rgx, ltpkD, flag, stpkD) @ #i3
-//
-//    &   #i1 < #i3)
-//      ==>
-//      ( /* then we can detect a fake record in the log */
-//        (flag = 'bad')
-//      )
-// "
+#endif
+
 
 end
