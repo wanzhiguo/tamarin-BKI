@@ -262,6 +262,7 @@ rule INIT_DOMAIN:
     L_Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. 
     Sigs_Revoke_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
     L_Sigs_Revoke_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. 
+//    BLM_Log($D, ~Did, 'nil'),
     Out(pk(~ltkD))
     ]
 
@@ -376,6 +377,7 @@ rule CHECK_CERT_REQUEST_4:
 rule ISSUE_CERT_5:
     let
        record = < sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB), $D, Did, 'Valid' >
+       Sig_BLM = sign(<$D, Did, Sigs, CA_pks, ltpkD>, ltkB)
     in
     [
     !Sigs_List_Final($D, Did,  Sigs, CA_pks, nSigs),
@@ -391,7 +393,7 @@ rule ISSUE_CERT_5:
     Accept($D, Did, Sigs, CA_pks)
     ]->
     [
-    Cert_Issued($D, Sigs, CA_pks),
+    BLM_Log($D, Did, 'Valid'),
     L_Blog($B, blogid, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
@@ -513,6 +515,7 @@ rule REVOKE_CERT_5:
     L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked),
     !Ltk($B, ltkB),
     !Pk($D, ltpkD),
+    BLM_Log($D, Did, 'Valid'),
     L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
     ]
   --[
@@ -522,6 +525,7 @@ rule REVOKE_CERT_5:
     ]->
     [
     Cert_Revoked($D, Sigs, CA_pks),
+    BLM_Log($D, Did, 'Invalidated'),
     L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
     ]
 
