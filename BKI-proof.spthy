@@ -210,9 +210,11 @@ rule INIT_BLOG:
    Compromised_CAs(Compromised_CA_List)
     ]
    --[
-   Eq(k+'nil', Compromised_CA_List),			// k CAs are compromised
+//   Eq(k+'nil', Compromised_CA_List),			// k CAs are compromised
+   SubsetEq(k+'nil', Compromised_CA_List),			// At least k CAs are compromised
    K_CAs_Compromised(Compromised_CA_List)
     ]->[
+   Compromised_CAs(Compromised_CA_List)
     ]
   
   /* Compromise t CAs */
@@ -222,9 +224,11 @@ rule INIT_BLOG:
    Compromised_CAs(Compromised_CA_List)
     ]
    --[
-   Eq(t+'nil', Compromised_CA_List),
+//   Eq(t+'nil', Compromised_CA_List),
+   SubsetEq(t+'nil', Compromised_CA_List),
    T_CAs_Compromised(Compromised_CA_List)
     ]->[
+   Compromised_CAs(Compromised_CA_List)
     ]
   /* Compromise a BLM.
      BLM is modeled as a trusted pary, to represent the blockchain maintainer.
@@ -521,30 +525,13 @@ rule REVOKE_CERT_5:
     L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
     ]
 
-/*
-rule CA_REVOKE_CERT_1:
-    let request = <'RevokeCert', $D, Did, record>
-        record = < Sig, $D, Did, 'Valid' >
-    in 
-    [
-    In(request),
-    L_Blog($B, blogid, blog),
-    !DomainInfo($D, Did, ltpkD),
-    ]--[
-    IsIn(record, blog),
-    Eq(verify(Sig, < $D, Did, Sigs, CA_pks, ltpkD >, ltpkB), true)
-    ]->
-    [
-    L_Blog($B, blogid, blog),
-    ]
-*/    
 
 /* Security property 1.
    Adversary need to compromise at least k CAs to get an invalid cert issued 
    on the blockchain log.
   */
 #ifdef secure1
-lemma invalid_cert_issued_more_than_k_compromised:
+lemma valid_cert_issued_less_than_k_compromised:
  "
  All D Did Sigs CA_pks #i1.
 
@@ -573,14 +560,42 @@ lemma invalid_cert_issued_more_than_k_compromised:
    on the blockchain log.
   */
 #ifdef secure2
-lemma revoke_cert_issued_more_than_t_compromised:
+lemma valid_cert_revoke_less_than_t_compromised:
  "
  All D Did Sigs CA_pks #i1.
 
-   /* If a domain has its cert successfully issued on the blockchain
+   /* If a domain's cert is successfully revoked on the blockchain
    */
 
     (Accept_Revoke(D, Did, Sigs, CA_pks) @ #i1
+
+/* and less than t CAs have been compromised */
+   &   not (Ex #i2 Compromised_CA_List.
+                T_CAs_Compromised(Compromised_CA_List) @ #i2)
+
+/* and BLM is not compromised */
+   &   not (Ex #i3 B ltkB.
+                Compromise_BLM(B,ltkB) @ #i3)
+      )
+      ==>
+      ( /* the Domain must be a valid domain */
+       (Ex #i4. Is_Type('Domain', D) @ #i4)
+      )
+ "
+#endif
+
+/* Security property 3.
+   Adversary need to compromise domain's private key to get an invalid cert updated
+   on the blockchain log.
+  */
+#ifdef secure3
+lemma valid_cert_update_domain_not_compromised:
+ "
+ All D Did Sigs CA_pks #i1.
+
+   /* If a domain has its cert successfully updated on the blockchain */
+
+    (Accept_Update(D, Did, Sigs, CA_pks) @ #i1
 
 /* and less than k CAs have been compromised */
    &   not (Ex #i2 Compromised_CA_List.
@@ -596,6 +611,7 @@ lemma revoke_cert_issued_more_than_t_compromised:
       )
  "
 #endif
+
 
  /* We can run protocol correctly without having any compromised party*/
 #ifdef correct
