@@ -117,9 +117,9 @@ rule ChanIn_S:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'		// n CAs in total. it can be set to any for test purpose.
-        k = '1'			// k out of n CAs required to issue a cert.
-        t = '1'				// t CAs to revoke a cert.
+//        n = '1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+//        k = '1'+'1'			// k out of n CAs required to issue a cert.
+//        t = '1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
@@ -319,6 +319,7 @@ rule CA_GENERATE_SIG_1:
      ]->
     [
 //     PkD($D, ltpkD),
+     Out(Sig_full),
      Out_S($CA, $D, Sig_full)     		// Obtain a signature from CA--Need k Sigs for a certificate.
     ]
   
@@ -351,8 +352,8 @@ rule DOMAIN_RECIEVE_SIG_2:
 /* If k sigs have been collected, domain owner submits it to BLMs for logging. 
   */
 rule CREATE_CERT_REQUEST_3:
-    let Cert_request = <$D, Did, Sigs >
-    in
+//    let Cert_request = <$D, Did, Sigs >
+//    in
     [
     !PubParams(n, k, t),
     !DomainInfo($D, Did),
@@ -360,29 +361,31 @@ rule CREATE_CERT_REQUEST_3:
     ]
   --[
     Is_Type('Domain', $D),
+    Out_Domain_Sigs($D, Did, Sigs),
     Eq(k+'nil', nSigs)		// k = '1'+'1'+.... If k is in nSigs, then k Sigs are collected by domain owner
 				// Note nSigs is initialized with 'nil', so we let k+'nil'
     ]->
     [
-    !Sigs_List_Final($D, Did, Sigs, nSigs),	// This list is used at Phase_5 by BLM
-    Out( Cert_request )
+    !Sigs_List_Final($D, Did, Sigs, nSigs)	// This list is used at Phase_5 by BLM
+    //Out(Sigs)
     ]
 /* Submit k signatures, and check each signature separately */ 
 rule CHECK_CERT_REQUEST_4: 
    let 
 //      Sig = sign( <'DomainCert', $D, ltpkD>, ltkCA)
       Sig_full = <$D, Did, Sig, $CA>
-      Cert_request = <$D, Did, Sigs >
+//      Cert_request = <$D, Did, Sigs >
    in
     [
     In(Sig_full),
-    In(Cert_request),
+    In(Sigs),
     !DomainInfo($D, Did),
     L_Sigs_Check_List($D, Did, Sigs_Checked),
     !Pk($CA, ltpkCA),
     !PkD($D, ltpkD)
     ]
   --[
+    In_BLM_Sigs($D, Did, Sig_full, Sigs),			// to resolve partial deconstruction. 12.30
     Is_Type('Domain', $D),
     Is_Type('CA', $CA),
     Uniq(<'BLM_CheckSig', $D, Did, $CA>),	// The CA's sig for is checked for only once.
@@ -636,7 +639,15 @@ rule ISSUE_CERT_5:
 //     BLM_Log($D, Did, 'Valid')
 //    ]
   
-
+lemma Sigs_Types [sources]:
+  " (All D Did Sig_full Sigs #i.
+       In_BLM_Sigs(D, Did, Sig_full, Sigs) @ #i
+      ==>
+      ( (Ex #j. KU(Sig_full)@ #j & #j < #i)
+   	| (Ex #k. Out_Domain_Sigs(D, Did, Sigs)@k )
+      )
+    )
+   "
 /* Security property 1.
    Adversary need to compromise at least k CAs to get an invalid cert issued 
    on the blockchain log.
