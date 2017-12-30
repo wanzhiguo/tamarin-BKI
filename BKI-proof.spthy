@@ -255,8 +255,8 @@ rule INIT_DOMAIN:
      ]
   --[ Is_Type('Domain', $D), 
       Uniq( < 'Init_Domain', $D > ) ]->	// A domain is initialze only once 
-  [ LtkD($D, ~ltkD),
-    PkD($D, pk(~ltkD)),			// public key of Domain, not persistent fact. 12.27--Zhiguo
+  [ !LtkD($D, ~ltkD),
+    !PkD($D, pk(~ltkD)),			// public key of Domain, not persistent fact. 12.27--Zhiguo
     !DomainInfo($D, ~Did),
     Sigs_List($D, ~Did, 'nil', 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
     L_Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. 
@@ -270,7 +270,7 @@ rule INIT_DOMAIN:
   /* Compromise a DOMAIN*/
 
   rule COMPROMISE_DOMAIN:
-   [ LtkD($D, ltkD)
+   [ !LtkD($D, ltkD)
     ]
   --[
      Is_Type('Domain', $D),
@@ -287,13 +287,13 @@ rule DOMAIN_REQUEST_SIG_0:
      in
      [
        !DomainInfo($D, Did),
-       PkD($D, ltpkD)
+       !PkD($D, ltpkD)
      ]
   --[
      Is_Type('Domain', $D)
      ]->
     [
-     PkD($D, ltpkD),
+//     PkD($D, ltpkD),
      Out_S($D, $CA, request)     
     ]
 
@@ -309,7 +309,7 @@ rule CA_GENERATE_SIG_1:
      [
       In_S($D, $CA, request),
       !Ltk($CA, ltkCA),				// Must have private key to sign the request.
-      PkD($D, ltpkD),
+      !PkD($D, ltpkD),
       !DomainInfo($D, Did)
      ]
   --[
@@ -318,7 +318,7 @@ rule CA_GENERATE_SIG_1:
      Uniq(<'ObtainSig', $D, Did, $CA>)		// A CA only provides a single signature
      ]->
     [
-     PkD($D, ltpkD),
+//     PkD($D, ltpkD),
      Out_S($CA, $D, Sig_full)     		// Obtain a signature from CA--Need k Sigs for a certificate.
     ]
   
@@ -334,7 +334,7 @@ rule DOMAIN_RECIEVE_SIG_2:
      Sigs_List($D, Did, Sigs, CA_pks, nSigs),	// Update current Sigs_List, add a new sig into it. 
      !DomainInfo($D, Did),
      !Pk($CA,ltpkCA),				// CA -- ltpkCA
-     PkD($D, ltpkD)				// restriction fact for domain D
+     !PkD($D, ltpkD)				// restriction fact for domain D
     ]
   --[
      Is_Type('Domain', $D),
@@ -342,8 +342,8 @@ rule DOMAIN_RECIEVE_SIG_2:
      Uniq( < 'Domain_CheckSig', $D, Did, $CA > ),		// A CA only provides a single signature, 
      Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
-    [Sigs_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' ),
-     PkD($D, ltpkD)				// restriction fact for domain D
+    [Sigs_List($D, Did, Sigs + Sig_full, CA_pks + ltpkCA, nSigs + '1' )
+//     PkD($D, ltpkD)				// restriction fact for domain D
      ]   // Added into Sigs_List after checking. Zhiguo
 					// Sigs include Sig_full because Sig_full include $D and Did information
 					// CA is a single symbol, i.e. 1 or 2 or 3 etc. 
@@ -380,7 +380,7 @@ rule CHECK_CERT_REQUEST_4:
     !DomainInfo($D, Did),
     L_Sigs_Check_List($D, Did, Sigs_Checked),
     !Pk($CA, ltpkCA),
-    PkD($D, ltpkD)
+    !PkD($D, ltpkD)
     ]
   --[
     Is_Type('Domain', $D),
@@ -390,7 +390,7 @@ rule CHECK_CERT_REQUEST_4:
     Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [
-    PkD($D, ltpkD),
+    //PkD($D, ltpkD),
     L_Sigs_Check_List($D, Did, Sigs_Checked + '1')
     ]
 
@@ -404,8 +404,8 @@ rule ISSUE_CERT_5:
     !PubParams(n,k,t),
     L_Sigs_Check_List($D, Did, Sigs_Checked),
     !Ltk($B, ltkB),
-    PkD($D, ltpkD),
-    LtkD($D, ltkD),
+    !PkD($D, ltpkD),
+    !LtkD($D, ltkD),
     L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
     ]
   --[
@@ -416,8 +416,8 @@ rule ISSUE_CERT_5:
     ]->
     [
     BLM_Log($D, Did, 'Valid'),
-    PkD($D, ltpkD),
-    LtkD($D, ltkD),
+    //PkD($D, ltpkD),
+    //LtkD($D, ltkD),
     L_Blog($B, blogid, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
@@ -658,10 +658,13 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
 /* and BLM is not compromised */
    &   not (Ex #i3 B ltkB.
                 Compromise_BLM(B,ltkB) @ #i3)
+
+   &   not (Ex #i4.
+                Compromise_Domain(D,ltkD) @ #i4)
       )
       ==>
       ( /* then the private key is not known by adversary */
-       not (Ex #i4. KU(ltkD) @ #i4)
+       not (Ex #i5. KU(ltkD) @ #i5)
       )
  "
 #endif
@@ -744,6 +747,8 @@ lemma protocol_correctness:
    &   not (Ex #i3 B ltkB.
                 Compromise_BLM(B,ltkB) @ #i3)
 
+   &   not (Ex #i4.
+                Compromise_Domain(D,ltkD) @ #i4)
 "
 #endif
 
