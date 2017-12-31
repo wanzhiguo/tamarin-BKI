@@ -117,9 +117,9 @@ rule ChanIn_S:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'+'1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
-        k = '1'+'1'+'1'			// k out of n CAs required to issue a cert.
-        t = '1'+'1'				// t CAs to revoke a cert.
+//        n = '1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+//        k = '1'+'1'			// k out of n CAs required to issue a cert.
+//        t = '1'+'1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
@@ -257,7 +257,7 @@ rule INIT_DOMAIN:
      ]
   --[ Is_Type('Domain', $D), 
       Uniq( < 'Init_Domain', $D > ) ]->	// A domain is initialze only once 
-  [ !LtkD($D, ~ltkD),
+  [ LtkD($D, ~ltkD),
     !PkD($D, pk(~ltkD)),			// public key of Domain, not persistent fact. 12.27--Zhiguo
     !DomainInfo($D, ~Did),
     Sigs_List($D, ~Did, 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter //  the second is removed 12.30
@@ -272,7 +272,7 @@ rule INIT_DOMAIN:
   /* Compromise a DOMAIN*/
 
   rule COMPROMISE_DOMAIN:
-   [ !LtkD($D, ltkD)
+   [ LtkD($D, ltkD)
     ]
   --[
      Is_Type('Domain', $D),
@@ -280,7 +280,8 @@ rule INIT_DOMAIN:
      Compromise_Domain($D,ltkD)
      ]->
   [
-   Out(ltkD)
+   Out(ltkD),
+   LtkD($D, ltkD)
   ]
 
   /* Domain request a certificate from CAs */
@@ -295,7 +296,7 @@ rule DOMAIN_REQUEST_SIG_0:
      Is_Type('Domain', $D)
      ]->
     [
-//     PkD($D, ltpkD),
+     //PkD($D, ltpkD),
      Out_S($D, $CA, request)     
     ]
 
@@ -319,7 +320,7 @@ rule CA_GENERATE_SIG_1:
      Uniq(<'ObtainSig', $D, Did, $CA>)		// A CA only provides a single signature
      ]->
     [
-//     PkD($D, ltpkD),
+     //PkD($D, ltpkD),
      Out(Sig),
      Out_S($CA, $D, Sig)     		// Obtain a signature from CA--Need k Sigs for a certificate.
     ]
@@ -341,7 +342,7 @@ rule DOMAIN_RECIEVE_SIG_2:
      Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [Sigs_List($D, Did, Sigs + Sig, nSigs + '1' )
-//     PkD($D, ltpkD)				// restriction fact for domain D
+     //PkD($D, ltpkD)				// restriction fact for domain D
      ]   // Added into Sigs_List after checking. Zhiguo
 
 /* If k sigs have been collected, domain owner submits it to BLMs for logging. 
@@ -396,7 +397,7 @@ rule ISSUE_CERT_5:
     L_Sigs_Check_List($D, Did, Sigs_Checked),
     !Ltk($B, ltkB),
     !PkD($D, ltpkD),
-    !LtkD($D, ltkD),
+    LtkD($D, ltkD),
     F_BLM_Log($D, Did, 'nil'),
     L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
     ]
@@ -410,7 +411,7 @@ rule ISSUE_CERT_5:
     [
     F_BLM_Log($D, Did, 'Valid'),
     //PkD($D, ltpkD),
-    //LtkD($D, ltkD),
+    LtkD($D, ltkD),
     L_Blog($B, blogid, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
@@ -427,7 +428,7 @@ rule DOMAIN_REQUEST_REVOKE_SIG_0:
      Is_Type('Domain', $D)
      ]->
     [
-//     PkD($D, ltpkD),
+     //PkD($D, ltpkD),
      Out_S($D, $CA, request)     		// Obtain a signature from CA--
     ]
 
@@ -451,7 +452,7 @@ rule CA_GENERATE_REVOKE_SIG_1:
      Uniq(<'ObtainRevokeSig', $D, Did, $CA>)		// A CA only provides a single signature
      ]->
     [
-//     PkD($D, ltpkD),
+     //PkD($D, ltpkD),
      Out(Sig),
      Out_S($CA, $D, Sig)     // Obtain a signature from CA--Need t Sigs to revoke a certificate.
     ]
@@ -473,7 +474,7 @@ rule DOMAIN_RECIEVE_REVOKE_SIG_2:
      Eq(verify(Sig, <'RevokeCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [
-//    PkD($D, ltpkD),
+    //PkD($D, ltpkD),
       Sigs_Revoke_List($D, Did, Sigs + Sig, nSigs + '1' )
      ]   // Added into Sigs_List after checking. Zhiguo
 
@@ -511,7 +512,7 @@ rule CHECK_CERT_REVOKE_REQUEST_4:
     ]->
     [
     L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked + '1')
-//    PkD($D, ltpkD)
+    //PkD($D, ltpkD)
     ]
 
 rule REVOKE_CERT_5:
@@ -536,7 +537,7 @@ rule REVOKE_CERT_5:
     [
     Cert_Revoked($D, Sigs ),
     F_BLM_Log($D, Did, 'Invalidated'),
-//    PkD($D, ltpkD),
+    //PkD($D, ltpkD),
     L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
     ]
 
@@ -551,14 +552,14 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
     Accept_Cert($D,Did, ltpkD)
     ]->
     [ 
-//     PkD($D, ltpkD),
+     //PkD($D, ltpkD),
      F_BLM_Log($D, Did, status)
      ]
    
 ///*
 //rule INVALID_CERT_PRIVATE_KEY_TEST:
 //    [ 
-//     PkD($D, ltpkD),
+//     !PkD($D, ltpkD),
 //     F_BLM_Log($D, Did, status)
 //    ]
 //   --[
@@ -566,7 +567,7 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
 //    Not_Accept_Cert($D,Did, ltpkD)
 //    ]->
 //    [ 
-//     PkD($D, ltpkD),
+//     //PkD($D, ltpkD),
 //     F_BLM_Log($D, Did, status)
 //     ]
 //*/
