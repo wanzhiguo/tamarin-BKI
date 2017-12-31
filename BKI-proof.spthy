@@ -117,9 +117,9 @@ rule ChanIn_S:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'		// n CAs in total. it can be set to any for test purpose.
-        k = '1'			// k out of n CAs required to issue a cert.
-        t = '1'				// t CAs to revoke a cert.
+        n = '1'+'1'+'1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+        k = '1'+'1'+'1'			// k out of n CAs required to issue a cert.
+        t = '1'+'1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
@@ -135,7 +135,8 @@ rule INIT_SYSTEM_PARAMS:
 /*Initialisation: Certificate log maintainer BLM. */
 
 rule INIT_BLM:
-    [ Fr(~ltkB)
+    [ Fr(~ltkB),
+      Fr(~blogid)
       ]		
   --[ Is_Type('BLM', $B),
       Uniq('INITBLM') 
@@ -143,26 +144,27 @@ rule INIT_BLM:
     [ !Ltk($B, ~ltkB),
       !Pk($B, pk(~ltkB)),
 //      StStateInitBLM($B, pk(~ltkB)),
+      L_Blog($B, ~blogid, 'nil'), 		// the log maintained by the BLM 
       Out(pk(~ltkB))
     ]
 
 
 
 /*Initialisation: Certificate log. */
-
-rule INIT_BLOG:
-     [
-      !Ltk($B, ltkB),
-//      StStateInitBLM($B, pk(ltkB)),
-      Fr(~blogid)
-     ]
-   --[ Is_Type('BLM', $B),
-       Uniq('INITBLOG') 				// Log is initialized only once
-     ]->
-     [
-      L_Blog($B, ~blogid, 'nil') 		// the log maintained by the BLM 
-     ]
-
+//
+//rule INIT_BLOG:
+//     [
+//      !Ltk($B, ltkB),
+////      StStateInitBLM($B, pk(ltkB)),
+//      Fr(~blogid)
+//     ]
+//   --[ Is_Type('BLM', $B),
+//       Uniq('INITBLOG') 				// Log is initialized only once
+//     ]->
+//     [
+//      L_Blog($B, ~blogid, 'nil') 		// the log maintained by the BLM 
+//     ]
+//
 
   /* Initialisation: Certificate authorities*/
 
@@ -262,7 +264,7 @@ rule INIT_DOMAIN:
     L_Sigs_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. 
     Sigs_Revoke_List($D, ~Did, 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
     L_Sigs_Revoke_Check_List($D, ~Did, 'nil'),		// To store sigs that have been verified. 
-    L_BLM_Log($D, ~Did, 'nil'),
+    F_BLM_Log($D, ~Did, 'nil'),
     Out(pk(~ltkD))
     ]
 
@@ -395,7 +397,7 @@ rule ISSUE_CERT_5:
     !Ltk($B, ltkB),
     !PkD($D, ltpkD),
     !LtkD($D, ltkD),
-    L_BLM_Log($D, Did, 'nil'),
+    F_BLM_Log($D, Did, 'nil'),
     L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
     ]
   --[
@@ -406,7 +408,7 @@ rule ISSUE_CERT_5:
     Accept($D, Did, ltkD, Sigs)
     ]->
     [
-    L_BLM_Log($D, Did, 'Valid'),
+    F_BLM_Log($D, Did, 'Valid'),
     //PkD($D, ltpkD),
     //LtkD($D, ltkD),
     L_Blog($B, blogid, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
@@ -522,7 +524,7 @@ rule REVOKE_CERT_5:
     L_Sigs_Revoke_Check_List($D, Did, Sigs_Checked),
     !Ltk($B, ltkB),
     !PkD($D, ltpkD),
-    L_BLM_Log($D, Did, 'Valid'),
+    F_BLM_Log($D, Did, 'Valid'),
     L_Blog($B, blogid, blog) // Initially blog contains only 'nil'
     ]
   --[
@@ -533,7 +535,7 @@ rule REVOKE_CERT_5:
     ]->
     [
     Cert_Revoked($D, Sigs ),
-    L_BLM_Log($D, Did, 'Invalidated'),
+    F_BLM_Log($D, Did, 'Invalidated'),
 //    PkD($D, ltpkD),
     L_Blog($B, blogid, blog + record) // Recorded on the BLM's log, ie. the blockchain
     ]
@@ -542,7 +544,7 @@ rule REVOKE_CERT_5:
 rule VALID_CERT_PRIVATE_KEY_TEST:
     [ 
      !PkD($D, ltpkD),
-     L_BLM_Log($D, Did, status)
+     F_BLM_Log($D, Did, status)
     ]
    --[
     Eq(status, 'Valid'),
@@ -550,14 +552,14 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
     ]->
     [ 
 //     PkD($D, ltpkD),
-     L_BLM_Log($D, Did, status)
+     F_BLM_Log($D, Did, status)
      ]
    
 ///*
 //rule INVALID_CERT_PRIVATE_KEY_TEST:
 //    [ 
 //     PkD($D, ltpkD),
-//     L_BLM_Log($D, Did, status)
+//     F_BLM_Log($D, Did, status)
 //    ]
 //   --[
 //    Eq(status, 'Invalidated'),
@@ -565,7 +567,7 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
 //    ]->
 //    [ 
 //     PkD($D, ltpkD),
-//     L_BLM_Log($D, Did, status)
+//     F_BLM_Log($D, Did, status)
 //     ]
 //*/
 //   
@@ -600,7 +602,7 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
 //      In(request),
 //      !Ltk($B, ltkB),			// Must have private key to sign the request.
 //      LtkD($D, newltkD),
-//      L_BLM_Log($D, Did, 'Valid')
+//      F_BLM_Log($D, Did, 'Valid')
 //     ]
 //  --[
 //     Is_Type('Domain', $D),
@@ -611,7 +613,7 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
 //     ]->
 //    [
 //     LtkD($D, newltkD),
-//     L_BLM_Log($D, Did, 'Valid')
+//     F_BLM_Log($D, Did, 'Valid')
 //    ]
   
 lemma Sigs_Types [sources]:
