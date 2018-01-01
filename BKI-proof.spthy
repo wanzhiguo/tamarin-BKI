@@ -117,9 +117,9 @@ rule ChanIn_S:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'+'1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
-        k = '1'+'1'+'1'			// k out of n CAs required to issue a cert.
-        t = '1'+'1'				// t CAs to revoke a cert.
+//        n = '1'+'1'		// n CAs in total. it can be set to any for test purpose.
+//        k = '1'+'1'			// k out of n CAs required to issue a cert.
+//        t = '1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
@@ -632,7 +632,7 @@ lemma Sigs_Types [sources]:
 #ifdef secure1
 lemma valid_cert_issued_less_than_k_CAs_compromised:
  "
- All D Did ltkD Sigs #i1.
+ All D Did ltkD Sigs #i1 #i6.
 
    /* If a domain has its cert successfully issued on the blockchain
    */
@@ -649,6 +649,8 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
 
    &   not (Ex #i4.
                 Compromise_Domain(D,ltkD) @ #i4)
+
+   &   Accept_Cert(D, Did, pk(ltkD)) @ #i6
       )
       ==>
       ( /* then the private key is not known by adversary */
@@ -664,7 +666,7 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
   */
 lemma valid_cert_revoke_less_than_t_CAs_compromised:
  "
- All D Did ltpkD Sigs #i1.
+ All D Did ltpkD Sigs #i1 #i4.
 
    /* If a domain's cert is successfully revoked on the blockchain
    */
@@ -678,13 +680,13 @@ lemma valid_cert_revoke_less_than_t_CAs_compromised:
 /* and BLM is not compromised */
    &   not (Ex #i3 B ltkB.
                 Compromise_BLM(B,ltkB) @ #i3)
-//   &
-//       Accept_Cert(D, Did, ltpkD) @ #i4 
+   &
+       Accept_Cert(D, Did, ltpkD) @ #i4 
       )
       ==>
       ( /* the public key cannot be accepted anymore */
-      not (Ex #i4. (Accept_Cert(D, Did, ltpkD) @ #i4 & i1 < i4))
-//      i4 < i1
+//      not (Ex #i4. (Accept_Cert(D, Did, ltpkD) @ #i4 & i1 < i4))
+      i4 < i1
       )
  "
 #endif
