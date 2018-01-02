@@ -102,7 +102,7 @@ restriction subseteq_check_succeed:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+        n = '1'+'1'		// n CAs in total. it can be set to any for test purpose.
         k = '1'+'1'			// k out of n CAs required to issue a cert.
         t = '1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
