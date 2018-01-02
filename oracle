@@ -30,27 +30,27 @@ for line in lines:
         l3.append(num)
     elif "!KU(" in line:
         l4.append(num)
-    elif "L_Sigs_Revoke_Check_List" in line:
+    elif re.search("Blog.+blogid", line):
         l5.append(num)
-    elif re.search("!KU.+sign.+RevokeCert", line):
+    elif "L_Sigs_Revoke_Check_List" in line:
         l6.append(num)
-    elif re.search("In_S.+RevokeCert", line):
+    elif re.search("!KU.+sign.+RevokeCert", line):
         l7.append(num)
-    elif "!Sigs_Revoke_List_Final" in line:
+    elif re.search("In_S.+RevokeCert", line):
         l8.append(num)
-    elif "Sigs_Revoke_List" in line:
+    elif "!Sigs_Revoke_List_Final" in line:
         l9.append(num)
-    elif "F_BLM_Log(" in line:
+    elif "Sigs_Revoke_List" in line:
         l10.append(num)
-    elif "Sigs_List(" in line:
+    elif "F_BLM_Log(" in line:
         l11.append(num)
-    elif re.search("In_S.+RequestCert", line):
+    elif "Sigs_List(" in line:
         l12.append(num)
-    elif "L_Sigs_Check_List(" in line:
+    elif re.search("In_S.+RequestCert", line):
         l13.append(num)
-    elif "!KU( pk(~" in line:
+    elif "L_Sigs_Check_List(" in line:
         l14.append(num)
-    elif re.search("L_Blog.+blogid.+, blog", line):
+    elif "!KU( pk(~" in line:
         l15.append(num)
     else:
         l16.append(num)
