@@ -102,9 +102,9 @@ restriction subseteq_check_succeed:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-       n = '1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
-       k = '1'+'1'			// k out of n CAs required to issue a cert.
-       t = '1'				// t CAs to revoke a cert.
+        n = '1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+        k = '1'+'1'			// k out of n CAs required to issue a cert.
+        t = '1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
@@ -543,14 +543,40 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
    Adversary need to compromise at least t CAs to get an invalid cert revoked
    on the blockchain log.
   */
+// lemma valid_cert_revoke_less_than_t_CAs_compromised:
+//  "
+//  All D Did ltpkD Sigs #i1.// #i4.
+// 
+//    /* If a domain's cert is successfully revoked on the blockchain
+//    */
+// 
+//     (Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
+// 
+// /* and less than t CAs have been compromised */
+//    &   not (Ex #i2 Compromised_CA_List.
+//                 T_CAs_Compromised(Compromised_CA_List) @ #i2)
+// 
+// /* and BLM is not compromised */
+//    &   not (Ex #i3 B ltkB.
+//                 Compromise_BLM(B,ltkB) @ #i3)
+//    &  not (Ex #i4.
+//        Accept_Cert(D, Did, ltpkD) @ #i4 )
+//       )
+// //      ==>
+// //      ( /* the public key cannot be accepted anymore */
+// //      not (Ex #i4. (Accept_Cert(D, Did, ltpkD) @ #i4 )) // & i1 < i4))
+//       i4 < i1
+// //      )
+//  "
 lemma valid_cert_revoke_less_than_t_CAs_compromised:
+ all-traces
  "
- All D Did ltpkD Sigs #i1 #i4.
+ not (Ex D Did ltpkD Sigs #i1 #i4.
 
    /* If a domain's cert is successfully revoked on the blockchain
    */
 
-    (Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
+    Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
 
 /* and less than t CAs have been compromised */
    &   not (Ex #i2 Compromised_CA_List.
@@ -559,13 +585,9 @@ lemma valid_cert_revoke_less_than_t_CAs_compromised:
 /* and BLM is not compromised */
    &   not (Ex #i3 B ltkB.
                 Compromise_BLM(B,ltkB) @ #i3)
-   &
-       Accept_Cert(D, Did, ltpkD) @ #i4 
-      )
-      ==>
-      ( /* the public key cannot be accepted anymore */
-//      not (Ex #i4. (Accept_Cert(D, Did, ltpkD) @ #i4 & i1 < i4))
-      i4 < i1
+
+   &  Accept_Cert(D, Did, ltpkD) @ #i4 
+   &  i1 < i4
       )
  "
 #endif
