@@ -323,7 +323,6 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     Eq(k+'nil', Sigs_Checked),			// All sigs have been checked.
     Uniq(<'IssueCert',$D, Did, ltpkD>),
     Is_Type('BLM', $B),
-//    Add_to_Blog_Issue($B, blog, $D, ltpkD),		// 1.3 prevent non-termination
     Accept($D, Did, ltpkD, Sigs_Checked)
     ]->
     [
@@ -400,20 +399,16 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
      !PubParams(n,k,t),
      L_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
      !Ltk($B, ltkB),
-//     BLM_Log($D, Did, ltpkD, 'Valid'),
      L_Blog($B, blog) // Initially blog contains only 'nil'
      ]
    --[
      Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
      Is_Type('BLM', $B),
-//     Add_to_Blog_Revoke($B, blog, $D, ltpkD),	// 1.3
      IsIn(record_old, blog),		// 1.2
      Uniq(<'RevokeCert',$D, Did, ltpkD>),
      Accept_Revoke($D, Did, ltpkD, Sigs_Checked )
      ]->
      [
-//     Cert_Revoked($D, Sigs ),
-//     BLM_Log($D, Did, ltpkD, 'Revoked'),
      Out(record),		//1.3. Blockchain is public
      L_Blog($B, blog + record) // Recorded on the BLM's log, ie. the blockchain
      ]
@@ -422,44 +417,43 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
 rule VALID_CERT_PRIVATE_KEY_TEST:
     let
         record= < Sig, $D, Did, 'Valid' >
-        record_revoke= < Sig_revoke, $D, Did, 'Revoked' >
     in
     [ 
-//     !Pk($D, ltpkD),
-//     BLM_Log($D, Did, ltpkD, status)
-       In(<Did, ltpkD>),
+       !Pk($D, ltpkD),
+       In(<$D, Did>),
        In(record),
-       In(record_revoke),
        !Pk($B, ltpkB),
        L_Blog($B, blog)
     ]
    --[
     Is_Type('BLM', $B),
-    NotIn(record_revoke, blog),
     SubsetEq(record+'nil', blog),		// 1.3 add nil as the invariant, see if it works
     Eq(verify(Sig, <'ValidCert', $D, Did, ltpkD>, ltpkB), true ),
-    Eq(verify(Sig_revoke, <'InvalidCert', $D, Did, ltpkD>, ltpkB), true ),
     Accept_Cert($D,Did, ltpkD)
     ]->
     [ 
-//     BLM_Log($D, Did, ltpkD, status)
        L_Blog($B, blog)
      ]
    
-///*
-//rule INVALID_CERT_PRIVATE_KEY_TEST:
-//    [ 
-//     !Pk($D, ltpkD),
-//     BLM_Log($D, Did, status)
-//    ]
-//   --[
-//    Eq(status, 'Revoked'),
-//    Not_Accept_Cert($D,Did, ltpkD)
-//    ]->
-//    [ 
-//     BLM_Log($D, Did, status)
+// rule INVALID_CERT_PRIVATE_KEY_TEST:
+//     let
+//         record_revoke= < Sig_revoke, $D, Did, 'Revoked' >
+//     in
+//     [ 
+//        In(<Did, ltpkD>),
+//        In(record_revoke),
+//        !Pk($B, ltpkB),
+//        L_Blog($B, blog)
 //     ]
-//*/
+//    --[
+//     Is_Type('BLM', $B),
+//     SubsetEq(record_revoke+'nil', blog),		// 1.3 add nil as the invariant, see if it works
+//     Eq(verify(Sig_revoke, <'InvalidCert', $D, Did, ltpkD>, ltpkB), true ),
+//     Not_Accept_Cert($D,Did, ltpkD)
+//     ]->
+//     [ 
+//        L_Blog($B, blog)
+//      ]
 //   
 //
 ///* Update certificate by Domain itself.*/
