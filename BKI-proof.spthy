@@ -103,7 +103,7 @@ restriction subseteq_check_succeed:
 rule INIT_SYSTEM_PARAMS:
    let 
         n = '1'+'1'		// n CAs in total. it can be set to any for test purpose.
-        k = '1'+'1'			// k out of n CAs required to issue a cert.
+        k = '1'			// k out of n CAs required to issue a cert.
         t = '1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
@@ -130,7 +130,7 @@ rule INIT_BLM:
     [ !Ltk($B, ~ltkB),
       !Pk($B, pk(~ltkB)),
       StStateInitBLM($B, pk(~ltkB)),
-      Blog($B, 'nil'), 		// the log maintained by the BLM 
+      L_Blog($B, 'nil'), 		// the log maintained by the BLM 
       Out(pk(~ltkB))
     ]
 
@@ -317,19 +317,19 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     !PubParams(n,k,t),
     L_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked),
     !Ltk($B, ltkB),
-    Blog($B, blog) // Initially blog contains only 'nil'
+    L_Blog($B, blog) // Initially blog contains only 'nil'
     ]
   --[
     Eq(k+'nil', Sigs_Checked),			// All sigs have been checked.
     Uniq(<'IssueCert',$D, Did, ltpkD>),
     Is_Type('BLM', $B),
-    Add_to_Blog_Issue($B, blog),		// 1.3 prevent non-termination
+//    Add_to_Blog_Issue($B, blog, $D, ltpkD),		// 1.3 prevent non-termination
     Accept($D, Did, ltpkD, Sigs_Checked)
     ]->
     [
 //    BLM_Log($D, Did, ltpkD, 'Valid'),
     Out(record),
-    Blog($B, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
+    L_Blog($B, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
 
@@ -394,55 +394,56 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
  rule BLM_REVOKE_CERT_3:
      let
         record_old = < sign(<'ValidCert', $D, Did, ltpkD>, ltkB), $D, Did, 'Valid' >
-        record = < sign(<'InvalidCert', $D, Did, ltpkD>, ltkB), $D, Did, 'Invalidated' >
+        record = < sign(<'InvalidCert', $D, Did, ltpkD>, ltkB), $D, Did, 'Revoked' >
      in
      [
-     In(ltpkD),
-     In(blog_new),		// because records are sent out, adversary can forge it. 1.3
      !PubParams(n,k,t),
      L_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
      !Ltk($B, ltkB),
 //     BLM_Log($D, Did, ltpkD, 'Valid'),
-     Blog($B, blog) // Initially blog contains only 'nil'
+     L_Blog($B, blog) // Initially blog contains only 'nil'
      ]
    --[
      Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
      Is_Type('BLM', $B),
-     Add_to_Blog_Revoke($B, blog),	// 1.3
+//     Add_to_Blog_Revoke($B, blog, $D, ltpkD),	// 1.3
      IsIn(record_old, blog),		// 1.2
-     Eq(blog_new + record_old, blog),	// 1.2
      Uniq(<'RevokeCert',$D, Did, ltpkD>),
      Accept_Revoke($D, Did, ltpkD, Sigs_Checked )
      ]->
      [
 //     Cert_Revoked($D, Sigs ),
-//     BLM_Log($D, Did, ltpkD, 'Invalidated'),
+//     BLM_Log($D, Did, ltpkD, 'Revoked'),
      Out(record),		//1.3. Blockchain is public
-     Blog($B, blog_new + record) // Recorded on the BLM's log, ie. the blockchain
+     L_Blog($B, blog + record) // Recorded on the BLM's log, ie. the blockchain
      ]
 
 
 rule VALID_CERT_PRIVATE_KEY_TEST:
     let
         record= < Sig, $D, Did, 'Valid' >
+        record_revoke= < Sig_revoke, $D, Did, 'Revoked' >
     in
     [ 
 //     !Pk($D, ltpkD),
 //     BLM_Log($D, Did, ltpkD, status)
        In(<Did, ltpkD>),
        In(record),
+       In(record_revoke),
        !Pk($B, ltpkB),
-       Blog($B, blog)
+       L_Blog($B, blog)
     ]
    --[
     Is_Type('BLM', $B),
-    IsIn(record, blog),
+    NotIn(record_revoke, blog),
+    SubsetEq(record+'nil', blog),		// 1.3 add nil as the invariant, see if it works
     Eq(verify(Sig, <'ValidCert', $D, Did, ltpkD>, ltpkB), true ),
+    Eq(verify(Sig_revoke, <'InvalidCert', $D, Did, ltpkD>, ltpkB), true ),
     Accept_Cert($D,Did, ltpkD)
     ]->
     [ 
 //     BLM_Log($D, Did, ltpkD, status)
-       Blog($B, blog)
+       L_Blog($B, blog)
      ]
    
 ///*
@@ -452,7 +453,7 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
 //     BLM_Log($D, Did, status)
 //    ]
 //   --[
-//    Eq(status, 'Invalidated'),
+//    Eq(status, 'Revoked'),
 //    Not_Accept_Cert($D,Did, ltpkD)
 //    ]->
 //    [ 
@@ -502,12 +503,13 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
 //     BLM_Log($D, Did, 'Valid')
 //    ]
   
-// lemma Sigs_Types [sources]:
-//   " (All D Did Sig Sigs #i.
-//        In_BLM_Sigs(D, Did, Sig, Sigs) @ #i
+// lemma Blog_Constraint [sources]:
+//   " (All D B blog1 ltpkD #i.
+//        Add_to_Blog_Revoke(B, blog1, D, ltpkD) @ #i
 //       ==>
-//       ( (Ex #j. KU(Sigs)@ #j & #j < #i)
-//    	| (Ex #k. Out_Domain_Sigs(D, Did, Sigs)@k )
+//       ( (Ex blog2 rest #j. Add_to_Blog_Issue(B, blog2, D, ltpkD)@ #j & #j < #i
+//          & ( rest + blog2 = blog1)
+//         )
 //       )
 //     )
 //    "
@@ -576,7 +578,7 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
 //       i4 < i1
 // //      )
 //  "
-lemma valid_cert_revoke_less_than_t_CAs_compromised [use_induction]:
+lemma valid_cert_revoke_less_than_t_CAs_compromised:
  all-traces
  "
  not (Ex D Did ltpkD Sigs #i1 #i4.
