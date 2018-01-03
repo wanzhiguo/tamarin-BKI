@@ -225,9 +225,9 @@ rule INIT_DOMAIN:
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),			// public key of Domain, not persistent fact. 12.27--Zhiguo
     !DomainInfo($D, ~Did),
-    Sigs_List($D, ~Did, pk(~ltkD), 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter //  the second is removed 12.30
+//    Sigs_List($D, ~Did, pk(~ltkD), 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter //  the second is removed 12.30
     L_Sigs_Check_List($D, ~Did, pk(~ltkD), 'nil'),		// To store sigs that have been verified. 
-    Sigs_Revoke_List($D, ~Did, pk(~ltkD), 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
+//    Sigs_Revoke_List($D, ~Did, pk(~ltkD), 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
     L_Sigs_Revoke_Check_List($D, ~Did, pk(~ltkD), 'nil'),		// To store sigs that have been verified. 
     Out(~Did),
     Out(pk(~ltkD))
@@ -392,10 +392,11 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
  
  rule BLM_REVOKE_CERT_3:
      let
-        record_old = < sign(<'ValidCert', $D, Did, ltpkD>, ltkB), $D, Did, 'Valid' >
-        record = < sign(<'InvalidCert', $D, Did, ltpkD>, ltkB), $D, Did, 'Revoked' >
+        record_old = < $D, Did, 'Valid' >
+        record = < $D, Did, 'Revoked' >
      in
      [
+     In(blog_new),			//1.3
      !PubParams(n,k,t),
      L_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
      !Ltk($B, ltkB),
@@ -405,18 +406,19 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
      Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
      Is_Type('BLM', $B),
      IsIn(record_old, blog),		// 1.2
+     Eq(blog_new + record_old, blog),	// 1.3  blog_new = blog - record_old
      Uniq(<'RevokeCert',$D, Did, ltpkD>),
      Accept_Revoke($D, Did, ltpkD, Sigs_Checked )
      ]->
      [
      Out(record),		//1.3. Blockchain is public
-     L_Blog($B, blog + record) // Recorded on the BLM's log, ie. the blockchain
+     L_Blog($B, blog_new + record) // Recorded on the BLM's log, ie. the blockchain
      ]
 
 
 rule VALID_CERT_PRIVATE_KEY_TEST:
     let
-        record= < Sig, $D, Did, 'Valid' >
+        record= < $D, Did, 'Valid' >
     in
     [ 
        !Pk($D, ltpkD),
@@ -428,34 +430,33 @@ rule VALID_CERT_PRIVATE_KEY_TEST:
    --[
     Is_Type('BLM', $B),
     SubsetEq(record+'nil', blog),		// 1.3 add nil as the invariant, see if it works
-    Eq(verify(Sig, <'ValidCert', $D, Did, ltpkD>, ltpkB), true ),
     Accept_Cert($D,Did, ltpkD)
     ]->
     [ 
        L_Blog($B, blog)
      ]
    
-// rule INVALID_CERT_PRIVATE_KEY_TEST:
-//     let
-//         record_revoke= < Sig_revoke, $D, Did, 'Revoked' >
-//     in
-//     [ 
-//        In(<Did, ltpkD>),
-//        In(record_revoke),
-//        !Pk($B, ltpkB),
-//        L_Blog($B, blog)
-//     ]
-//    --[
-//     Is_Type('BLM', $B),
-//     SubsetEq(record_revoke+'nil', blog),		// 1.3 add nil as the invariant, see if it works
-//     Eq(verify(Sig_revoke, <'InvalidCert', $D, Did, ltpkD>, ltpkB), true ),
-//     Not_Accept_Cert($D,Did, ltpkD)
-//     ]->
-//     [ 
-//        L_Blog($B, blog)
-//      ]
-//   
-//
+rule INVALID_CERT_PRIVATE_KEY_TEST:
+    let
+        record_revoke= < $D, Did, 'Revoked' >
+    in
+    [ 
+       In(<Did, ltpkD>),
+       In(record_revoke),
+       !Pk($B, ltpkB),
+       L_Blog($B, blog)
+    ]
+   --[
+    Is_Type('BLM', $B),
+    Is_Type('Domain', $D),
+    SubsetEq(record_revoke+'nil', blog),		// 1.3 add nil as the invariant, see if it works
+    Not_Accept_Cert($D,Did, ltpkD)
+    ]->
+    [ 
+       L_Blog($B, blog)
+     ]
+  
+
 ///* Update certificate by Domain itself.*/
 //rule DOMAIN_UPDATE_CERT_0:
 //     let 
@@ -547,40 +548,14 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
    Adversary need to compromise at least t CAs to get an invalid cert revoked
    on the blockchain log.
   */
-// lemma valid_cert_revoke_less_than_t_CAs_compromised:
-//  "
-//  All D Did ltpkD Sigs #i1.// #i4.
-// 
-//    /* If a domain's cert is successfully revoked on the blockchain
-//    */
-// 
-//     (Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
-// 
-// /* and less than t CAs have been compromised */
-//    &   not (Ex #i2 Compromised_CA_List.
-//                 T_CAs_Compromised(Compromised_CA_List) @ #i2)
-// 
-// /* and BLM is not compromised */
-//    &   not (Ex #i3 B ltkB.
-//                 Compromise_BLM(B,ltkB) @ #i3)
-//    &  not (Ex #i4.
-//        Accept_Cert(D, Did, ltpkD) @ #i4 )
-//       )
-// //      ==>
-// //      ( /* the public key cannot be accepted anymore */
-// //      not (Ex #i4. (Accept_Cert(D, Did, ltpkD) @ #i4 )) // & i1 < i4))
-//       i4 < i1
-// //      )
-//  "
 lemma valid_cert_revoke_less_than_t_CAs_compromised:
- all-traces
  "
- not (Ex D Did ltpkD Sigs #i1 #i4.
+ All D Did ltpkD Sigs #i1.// #i4.
 
    /* If a domain's cert is successfully revoked on the blockchain
    */
 
-    Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
+    (Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
 
 /* and less than t CAs have been compromised */
    &   not (Ex #i2 Compromised_CA_List.
@@ -589,11 +564,37 @@ lemma valid_cert_revoke_less_than_t_CAs_compromised:
 /* and BLM is not compromised */
    &   not (Ex #i3 B ltkB.
                 Compromise_BLM(B,ltkB) @ #i3)
-
-   &  Accept_Cert(D, Did, ltpkD) @ #i4 
-   &  i1 < i4
+//   &  not (Ex #i4.
+//       Accept_Cert(D, Did, ltpkD) @ #i4 )
+      )
+      ==>
+      ( /* the public key cannot be accepted anymore */
+      not (Ex #i4. (Accept_Cert(D, Did, ltpkD) @ #i4   & i1 < i4))
+      // i4 < i1
       )
  "
+// lemma valid_cert_revoke_less_than_t_CAs_compromised:
+//  all-traces
+//  "
+//  not (Ex D Did ltpkD Sigs #i1 #i4.
+// 
+//    /* If a domain's cert is successfully revoked on the blockchain
+//    */
+// 
+//     Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
+// 
+// /* and less than t CAs have been compromised */
+//    &   not (Ex #i2 Compromised_CA_List.
+//                 T_CAs_Compromised(Compromised_CA_List) @ #i2)
+// 
+// /* and BLM is not compromised */
+//    &   not (Ex #i3 B ltkB.
+//                 Compromise_BLM(B,ltkB) @ #i3)
+// 
+//    &  Accept_Cert(D, Did, ltpkD) @ #i4 
+//    &  i1 < i4
+//       )
+//  "
 #endif
 
 #ifdef secure3
