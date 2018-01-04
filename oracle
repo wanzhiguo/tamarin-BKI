@@ -24,28 +24,28 @@ for line in lines:
     num = line.split(':')[0]
     if "!PubParams" in line:
         l1.append(num)
-    elif "!KU( ~Ltk" in line:
+    elif "!Ltk( " in line:
         l2.append(num)
-    elif "!Pk( " in line:
+    elif "!KU( ~Ltk" in line:
         l3.append(num)
-    elif re.search("!KU.+sign.+DomainCert", line):
+    elif "!Pk( " in line:
         l4.append(num)
-    elif re.search("Blog.+blogid", line):
-        l5.append(num)
-    elif "L_Sigs_Revoke_Check_List" in line:
-        l6.append(num)
-    elif re.search("!KU.+sign.+RevokeCert", line):
-        l7.append(num)
     elif "L_Sigs_Check_List(" in line:
-        l8.append(num)
-    elif "!Sigs_Revoke_List_Final" in line:
-        l9.append(num)
+        l5.append(num)
+    elif re.search("!KU.+sign", line):
+        l6.append(num)
+    elif "L_Sigs_Revoke_Check_List" in line:
+        l7.append(num)
     elif "!KU( pk(~" in line:
-        l10.append(num)
+        l8.append(num)
     elif "!KU(" in line:
+        l9.append(num)
+    elif "L_Compromised_CAs" in line:
+        l10.append(num)
+    elif "!Sigs_Revoke_List_Final" in line:
         l11.append(num)
     else:
-        l11.append(num)
+        l12.append(num)
 ranked = l1 + l2 + l3 + l4 + l5 + l6 + l7 + l8 + l9 + l10 + l11 + l12
 for i in ranked:
     print i

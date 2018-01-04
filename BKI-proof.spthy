@@ -1,9 +1,9 @@
 /* In this proof, strategies we adopt are:
-   1. Secure channels are modelled between Domain and CAs with rules from tamarin manual.
-   2. Log on blockchain is modelled as a list of records, and it is append-only;
-   3. CAs' identities are modelled as '1', '1'+'1', '1'+'1'+'1', ...; There can be unlimited number of CAs.
-   4. The model support any combination of k CAs to issue certs, any combination of t CAs to revoke certs.
-   5. BLMs are modelled as single trusted BLM, as we assume the blockchain is securely maintained with consensus algorithms.
+   1. Log on blockchain is modelled as a list of records, and it is append-only;
+   2. CAs' identities are modelled as '1', '1'+'1', '1'+'1'+'1', ...; There can be unlimited number of CAs.
+   3. The model support any combination of k CAs to issue certs, any combination of t CAs to revoke certs.
+   4. BLMs are modelled as single trusted BLM, as we assume the blockchain is securely maintained with consensus algorithms.
+   5. BKI security can be proved under different n, k and t. E.g. n = '1'+'1'+'1', k = '1'+'1', t ='1'. 
 
 To run the proof:
    tamarin-prover --prove BKI-proof.spthy -Dsecure1 -Dsecure2
@@ -27,7 +27,7 @@ theory BKI_protocol_security
       is not enough to convince web browsers to accept the certificate
       (proof of presence in the relevant BLM is also needed).
     - Domain Servers
-    - BLM
+    - BLM: The BLMs in BKI is modeled as a single BLM.
 
 
     =======Adversary model=======
@@ -102,9 +102,9 @@ restriction subseteq_check_succeed:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'		// n CAs in total. it can be set to any for test purpose.
-        k = '1'+'1'		// k out of n CAs required to issue a cert.
-        t = '1'				// t CAs to revoke a cert.
+        n = '1'+'1'+'1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+        k = '1'+'1'+'1'		// k out of n CAs required to issue a cert.
+        t = '1'+'1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
@@ -225,10 +225,8 @@ rule INIT_DOMAIN:
   [ !Ltk($D, ~ltkD),
     !Pk($D, pk(~ltkD)),			// public key of Domain, not persistent fact. 12.27--Zhiguo
     !DomainInfo($D, ~Did),
-//    Sigs_List($D, ~Did, pk(~ltkD), 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter //  the second is removed 12.30
-    L_Sigs_Check_List($D, ~Did, pk(~ltkD), 'nil'),		// To store sigs that have been verified. 
-//    Sigs_Revoke_List($D, ~Did, pk(~ltkD), 'nil', 'nil'),	// The first list is sigs_list, the second is list of CA public keys, third is the counter
-    L_Sigs_Revoke_Check_List($D, ~Did, pk(~ltkD), 'nil'),		// To store sigs that have been verified. 
+    F_Sigs_Check_List($D, ~Did, pk(~ltkD), 'nil'),		// To store sigs that have been verified. 
+    F_Sigs_Revoke_Check_List($D, ~Did, pk(~ltkD), 'nil'),	// To store sigs that have been verified. 
     Out(~Did),
     Out(pk(~ltkD))
     ]
@@ -293,7 +291,7 @@ rule BLM_CHECK_CERT_REQUEST_2:
     In(Sig),
     In(ltpkD),
     In(Did),
-    L_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked),
+    F_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked),
     !Pk($CA, ltpkCA)
     ]
   --[
@@ -303,19 +301,18 @@ rule BLM_CHECK_CERT_REQUEST_2:
     Eq(verify(Sig, <'DomainCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [
-    L_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked + '1')	// this fact is maintained by BLM
+    F_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked + '1')	// this fact is maintained by BLM
     ]
 
 rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().  
 		       // ltpkD inside Sigs should be the same as In(ltpkD).
     let
        record = < $D, Did, 'Valid' >
-       Sig_BLM = sign(<$D, Did, ltpkD>, ltkB)
     in
     [
     In(ltpkD),
     !PubParams(n,k,t),
-    L_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked),
+    F_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked),
     !Ltk($B, ltkB),
     L_Blog($B, blog) // Initially blog contains only 'nil'
     ]
@@ -323,13 +320,12 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     Eq(k+'nil', Sigs_Checked),			// All sigs have been checked.
     Uniq(<'IssueCert',$D, Did, ltpkD>),
     Is_Type('BLM', $B),
-    Add_to_Blog($B, blog, record),		// 1.4
+    Add_to_Blog($B, blog, record),		
     Accept($D, Did, ltpkD, Sigs_Checked)
     ]->
     [
-//    BLM_Log($D, Did, ltpkD, 'Valid'),
     Out(record),
-    St_Cert_Issue($B, Did, ltpkD),	// used for revocation
+    St_Cert_Issue($B, Did, ltpkD),	// it is used for revocation
     L_Blog($B, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
@@ -378,7 +374,7 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
     In(Sig),
     In(ltpkD),
     In(Did),
-    L_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
+    F_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
     !Pk($CA, ltpkCA)
     ]
   --[
@@ -388,20 +384,18 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
     Eq(verify(Sig, <'RevokeCert', $D, Did, ltpkD>, ltpkCA), true )
     ]->
     [
-    L_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked + '1')
+    F_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked + '1')
     ]
  
  
  rule BLM_REVOKE_CERT_3:
      let
-//        record_old = < $D, Did, 'Valid' >
         record = < $D, Did, 'Revoked' >
      in
      [
-//     In(blog_new),			//1.3
      !PubParams(n,k,t),
-     St_Cert_Issue($D, Did, ltpkD),	// Only if the Cert is issued. 1.4
-     L_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
+     St_Cert_Issue($D, Did, ltpkD),	
+     F_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
      !Ltk($B, ltkB),
      L_Blog($B, blog) // Initially blog contains only 'nil'
      ]
@@ -409,38 +403,38 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
      Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
      Is_Type('BLM', $B),
      Is_Type('Domain',$D),
-//     IsIn(record_old, blog),		// 1.2
-//     Eq(blog_new + record_old, blog),	// 1.3  blog_new = blog - record_old
-     Add_to_Blog($B, blog, record),		// 1.4
+     Add_to_Blog($B, blog, record),	
      Uniq(<'RevokeCert',$D, Did, ltpkD>),
      Accept_Revoke($D, Did, ltpkD, Sigs_Checked )
      ]->
      [
-//     Out(record),		//1.3. Blockchain is public, no need to publish it, all public
-     St_Cert_Revoked($D, Did, ltpkD),	// Only if the Cert is issued. 1.4
+     St_Cert_Revoked($D, Did, ltpkD),	// Only if the Cert is issued. 
      L_Blog($B, blog + record) // Recorded on the BLM's log, ie. the blockchain
      ]
 
 
+/* BLM checks that if a domain's cert is valid by checking the blockchain log.
+*/
 rule VALID_CERT_PRIVATE_KEY_TEST:
     let
         record= < $D, Did, 'Valid' >
     in
     [ 
-//       !Pk($D, ltpkD),
        In(<$D, Did, ltpkD>),
        !Pk($B, ltpkB),
        L_Blog($B, blog)
     ]
    --[
     Is_Type('BLM', $B),
-    SubsetEq(record+'nil', blog),		// 1.3 add nil as the invariant, see if it works
+    SubsetEq(record+'nil', blog),		
     Accept_Cert($D,Did, ltpkD)
     ]->
     [ 
        L_Blog($B, blog)
      ]
    
+/* BLM checks that if a domain's cert is revoked by checking the blockchain log.
+*/
 rule INVALID_CERT_PRIVATE_KEY_TEST:
     let
         record_revoke= < $D, Did, 'Revoked' >
@@ -453,7 +447,7 @@ rule INVALID_CERT_PRIVATE_KEY_TEST:
    --[
     Is_Type('BLM', $B),
     Is_Type('Domain', $D),
-    SubsetEq(record_revoke+'nil', blog),		// 1.3 add nil as the invariant, see if it works
+    SubsetEq(record_revoke+'nil', blog),		
     Not_Accept_Cert($D,Did, ltpkD)
     ]->
     [ 
@@ -502,16 +496,16 @@ rule INVALID_CERT_PRIVATE_KEY_TEST:
 //     BLM_Log($D, Did, 'Valid')
 //    ]
   
-lemma Blog_Constraint [sources]:
-  " (All B blog1 D Did #i.
-       Add_to_Blog(B, blog1, <D, Did, 'Revoked'> ) @ #i
-      ==>
-      ( (Ex rest blog2 #j. Add_to_Blog(B, blog2, < D, Did, 'Valid'>)@ #j & #j < #i
-         & ( rest + blog2 = blog1)
-        )
-      )
-    )
-   "
+//lemma Blog_Constraint [sources]:
+//  " (All B blog1 D Did #i.
+//       Add_to_Blog(B, blog1, <D, Did, 'Revoked'> ) @ #i
+//      ==>
+//      ( (Ex rest blog2 #j. Add_to_Blog(B, blog2, < D, Did, 'Valid'>)@ #j & #j < #i
+//         & ( rest + blog2 = blog1)
+//        )
+//      )
+//    )
+//   "
 /* Security property 1.
    Adversary need to compromise at least k CAs to get an invalid cert issued 
    on the blockchain log.
