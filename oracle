@@ -30,7 +30,7 @@ for line in lines:
         l3.append(num)
     elif "!Pk( " in line:
         l4.append(num)
-    elif "L_Sigs_Check_List(" in line:
+    elif "F_Sigs_Check_List(" in line:
         l5.append(num)
     elif re.search("!KU.+sign", line):
         l6.append(num)
