@@ -308,6 +308,7 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
 		       // ltpkD inside Sigs should be the same as In(ltpkD).
     let
        record = < $D, Did, ltpkD, 'Valid' >
+       record_revoke = < $D, Did, ltpkD, 'Revoked' >
     in
     [
     In(ltpkD),
@@ -321,6 +322,7 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     Uniq(<'IssueCert',$D, Did, ltpkD>),
     Is_Type('BLM', $B),
     Is_Type('Domain', $D),
+    NotIn(record_revoke, blog),			// 1.4 
     Add_to_Blog($B, blog, record),		
     Accept($D, Did, ltpkD, Sigs_Checked)
     ]->
@@ -416,23 +418,44 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
 
 /* BLM checks that if a domain's cert is valid by checking the blockchain log.
 */
-rule VALID_CERT_PRIVATE_KEY_TEST:
-//    let
-//        record= < $D, Did, ltpkD, 'Valid' >
-//    in
-    [ 
-       In(<$D, Did, ltpkD>),
-       !Pk($B, ltpkB),
-       St_Cert_Issue($D, Did, ltpkD)
-    ]
-   --[
-    Is_Type('BLM', $B),
-    Is_Type('Domain', $D),
-    Accept_Cert($D,Did, ltpkD)
-    ]->
-    [ 
-       St_Cert_Issue($D, Did, ltpkD)
-     ]
+// rule VALID_CERT_PRIVATE_KEY_TEST:
+// //    let
+// //        record= < $D, Did, ltpkD, 'Valid' >
+// //    in
+//     [ 
+//        In(<$D, Did, ltpkD>),
+//        !Pk($B, ltpkB),
+//        St_Cert_Issue($D, Did, ltpkD)
+//     ]
+//    --[
+//     Is_Type('BLM', $B),
+//     Is_Type('Domain', $D),
+//     Accept_Cert($D,Did, ltpkD)
+//     ]->
+//     [ 
+//        St_Cert_Issue($D, Did, ltpkD)
+//      ]
+
+ rule VALID_CERT_PRIVATE_KEY_TEST:
+      let
+          record = < $D, Did, ltpkD, 'Valid' >
+          record_revoke = < $D, Did, ltpkD, 'Revoked' >
+      in
+      [ 
+         In(<$D, Did, ltpkD>),
+         !Pk($B, ltpkB),
+         L_Blog($B, blog)
+      ]
+     --[
+      Is_Type('BLM', $B),
+      Is_Type('Domain', $D),
+      IsIn(record, blog),		
+      NotIn(record_revoke, blog),		
+      Accept_Cert($D,Did, ltpkD)
+      ]->
+      [ 
+         L_Blog($B, blog)
+       ]
    
 ///* BLM checks that if a domain's cert is revoked by checking the blockchain log.
 //*/
@@ -497,13 +520,14 @@ rule DOMAIN_UPDATE_CERT_0:
 //     BLM_Log($D, Did, 'Valid')
 //    ]
   
-lemma Blog_Constraint [sources]:
-  " (All B blog1 D Did #i.
-       Add_to_Blog(B, blog1, <D, Did, 'Revoked'> ) @ #i
+lemma Blog_Constraint [reuse, use_induction]:
+  " (All B blog1 blog2 D Did ltpkD #i #j.
+       ( Add_to_Blog(B, blog1, <D, Did, ltpkD, 'Revoked'> ) @ #i
+      & Add_to_Blog(B, blog2, < D, Did, ltpkD, 'Valid'>) @ #j 
+       )
       ==>
-      ( (Ex rest blog2 #j. Add_to_Blog(B, blog2, < D, Did, 'Valid'>)@ #j & #j < #i
-         & ( rest + blog2 = blog1)
-        )
+      (  #j < #i
+        // & (Ex rest.  rest + blog2 = blog1)
       )
     )
    "
@@ -547,7 +571,7 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
    Adversary need to compromise at least t CAs to get an invalid cert revoked
    on the blockchain log.
   */
-lemma valid_cert_revoke_less_than_t_CAs_compromised:
+lemma valid_cert_revoke_less_than_t_CAs_compromised[use_induction]:
  "
  All D Did ltpkD Sigs #i1.// #i4.
 
