@@ -309,8 +309,10 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     let
        record = < $D, Did, ltpkD, 'Valid' >
        record_revoke = < $D, Did, ltpkD, 'Revoked' >
+       cert_domain = sign(record, ltkB)
     in
     [
+    Fr(~CertID),		// 1.7
     In(ltpkD),
     !PubParams(n,k,t),
     F_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked),
@@ -322,13 +324,14 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     Uniq(<'IssueCert',$D, Did, ltpkD>),
     Is_Type('BLM', $B),
     Is_Type('Domain', $D),
+    NotIn(record, blog),
     NotIn(record_revoke, blog),			// 1.4 
-    Add_to_Blog($B, blog, record),		
-    Accept($D, Did, ltpkD, Sigs_Checked)
+//    Issue_Cert($B, blog, record),		
+    Cert_Issued(~CertID)
     ]->
     [
-    Out(record),
-    St_Cert_Issue($D, Did, ltpkD),	// it is used for revocation
+    Out(cert_domain),
+    Domain_Cert(~CertID, cert_domain),		// Domain's cert
     L_Blog($B, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
@@ -393,11 +396,15 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
  
  rule BLM_REVOKE_CERT_3:
      let
-        record = < $D, Did, ltpkD, 'Revoked' >
+       record = < $D, Did, ltpkD, 'Valid' >
+       record_revoke = < $D, Did, ltpkD, 'Revoked' >
+       cert_domain = sign(record, ltkB)
+       cert_domain_revoke = sign(record_revoke, ltkB)
      in
      [
      !PubParams(n,k,t),
-     St_Cert_Issue($D, Did, ltpkD),	
+     Fr(~RevokeID),
+     Domain_Cert(CertID, cert_domain),
      F_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
      !Ltk($B, ltkB),
      L_Blog($B, blog) // Initially blog contains only 'nil'
@@ -406,60 +413,127 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
      Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
      Is_Type('BLM', $B),
      Is_Type('Domain',$D),
-     Add_to_Blog($B, blog, record),	
+     IsIn(record, blog),		// 1.6
+     NotIn(record_revoke, blog),
+//     Revoke_Cert($B, blog, record_revoke),	
      Uniq(<'RevokeCert',$D, Did, ltpkD>),
-     Accept_Revoke($D, Did, ltpkD, Sigs_Checked )
+     Cert_Revoked(CertID)
      ]->
      [
-     St_Cert_Revoked($D, Did, ltpkD),	// Only if the Cert is issued. 
-     L_Blog($B, blog + record) // Recorded on the BLM's log, ie. the blockchain
+     Domain_Cert_Revoke(~RevokeID, cert_domain_revoke),
+     Out(cert_domain_revoke),
+     L_Blog($B, blog + record_revoke) // Recorded on the BLM's log, ie. the blockchain
      ]
+
+//  /* Start secure communication */
+//
+// rule SECURE_COMMUNICATION_USER_1:
+//  let
+//      record= < $D, Did, ltpkD, 'Valid' >
+//  in
+//    [
+//     In(record),
+//     Domain_Cert(CertID, cert_domain),
+//     Fr(~n),
+//     !Pk($B, ltpkB),
+//     L_Blog($B, blog)
+//     ]
+//  --[
+//     Is_Type('Domain', $D),
+//     Is_Type('BLM', $B),
+//     IsIn(record, blog),
+//     Eq(verify(cert_domain, record, ltpkB), true),
+//     Start_Role(<'SCU','U'>,<$D>)
+//     ]->
+//     [
+//      Out(aenc{'1', ~n}ltpkD),
+//      Domain_Cert(CertID, cert_domain),
+//      StSend($D, Did, ~n, ltpkD),
+//      L_Blog($B, blog)
+//     ]
+//
+//  rule SECURE_COMMUNICATION_DOMAIN_1:
+//  let 
+//       m=aenc{'1', n}ltpkD
+//  in
+//    [
+//     In(m),
+//     !Ltk($D, ltkD)
+//     ]
+//  --[
+//     Is_Type('Domain', $D),
+//     Eq(fst(adec(m, ltkD)), '1'),
+//     Start_Role(<'SCD','D'>,<$D>)
+//     ]->
+//     [
+//      Out( h(snd(adec(m, ltkD))) )
+//      ]
+//
+//rule SECURE_COMMUNICATION_USER_2:
+//  [ StSend($D, Did, n, ltpkD),
+//    In( h(n) )       // Receive hashed secret from network
+//    ]
+//  --[ Com_Done($D, Did, n, ltpkD) ]-> // State that the secret 'n' was sent to domain $D
+//    [
+//     StDone($D, Did, n, ltpkD)
+//     ]
+
 
 
 /* BLM checks that if a domain's cert is valid by checking the blockchain log.
 */
-// rule VALID_CERT_PRIVATE_KEY_TEST:
-// //    let
-// //        record= < $D, Did, ltpkD, 'Valid' >
-// //    in
-//     [ 
-//        In(<$D, Did, ltpkD>),
-//        !Pk($B, ltpkB),
-//        St_Cert_Issue($D, Did, ltpkD)
-//     ]
-//    --[
-//     Is_Type('BLM', $B),
-//     Is_Type('Domain', $D),
-//     Accept_Cert($D,Did, ltpkD)
-//     ]->
-//     [ 
-//        St_Cert_Issue($D, Did, ltpkD)
-//      ]
 
- rule VALID_CERT_PRIVATE_KEY_TEST:
+ rule VALID_CERT_CHECK:
       let
           record = < $D, Did, ltpkD, 'Valid' >
-          record_revoke = < $D, Did, ltpkD, 'Revoked' >
+//          record_revoke = < $D, Did, ltpkD, 'Revoked' >
       in
       [ 
          In(<$D, Did, ltpkD>),
          !Pk($B, ltpkB),
+         Domain_Cert(CertID, cert_domain),
          L_Blog($B, blog)
       ]
      --[
       Is_Type('BLM', $B),
       Is_Type('Domain', $D),
       IsIn(record, blog),		
-      NotIn(record_revoke, blog),		
+      Eq(verify(cert_domain, record, ltpkB), true),
+//      NotIn(record_revoke, blog),
+      Cert_Accepted(CertID),			// 1.7
       Accept_Cert($D,Did, ltpkD)
       ]->
       [ 
+         Valid_Cert($D, Did, ltpkD),		// 1.6
+         Domain_Cert(CertID, cert_domain),
          L_Blog($B, blog)
        ]
    
+// rule INVALID_CERT_CHECK:
+//      let
+//          record_revoke = < $D, Did, ltpkD, 'Revoked' >
+//      in
+//      [ 
+//         In(<$D, Did, ltpkD>),
+//         !Pk($B, ltpkB),
+//         Domain_Cert_Revoke(RevokeID, cert_domain_revoke),
+//         L_Blog($B, blog)
+//      ]
+//     --[
+//      Is_Type('BLM', $B),
+//      Is_Type('Domain', $D),
+//      IsIn(record_revoke, blog),		
+//      Eq(verify(cert_domain_revoke, record_revoke, ltpkB), true),
+//      Cert_Rejected(RevokeID)
+//      ]->
+//      [ 
+//         Domain_Cert_Revoke(RevokeID, cert_domain_revoke),
+//         L_Blog($B, blog)
+//       ]
+
 ///* BLM checks that if a domain's cert is revoked by checking the blockchain log.
 //*/
-//rule INVALID_CERT_PRIVATE_KEY_TEST:
+//rule INVALID_CERT_CHECK:
 //    let
 //        record_revoke= < $D, Did, ltpkD, 'Revoked' >
 //    in
@@ -479,22 +553,22 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
 //     ]
 //  
 
-/* Update certificate by Domain itself.*/
-rule DOMAIN_UPDATE_CERT_0:
-     let 
-	Sig = sign( <'UpdateCert', $D, pk(~newltkD), ltpkD>, ltkD)
-     in
-     [
-      !Ltk($D, ltkD),
-      !Pk($D, ltpkD),
-      Fr(~newltkD)
-     ]
-  --[
-     Is_Type('Domain', $D)
-     ]->
-    [
-     Out(<$D, pk(~newltkD), ltpkD, Sig>)
-    ]
+// /* Update certificate by Domain itself.*/
+// rule DOMAIN_UPDATE_CERT_0:
+//      let 
+// 	Sig = sign( <'UpdateCert', $D, pk(~newltkD), ltpkD>, ltkD)
+//      in
+//      [
+//       !Ltk($D, ltkD),
+//       !Pk($D, ltpkD),
+//       Fr(~newltkD)
+//      ]
+//   --[
+//      Is_Type('Domain', $D)
+//      ]->
+//     [
+//      Out(<$D, pk(~newltkD), ltpkD, Sig>)
+//     ]
 
 
   /* 
@@ -520,17 +594,12 @@ rule DOMAIN_UPDATE_CERT_0:
 //     BLM_Log($D, Did, 'Valid')
 //    ]
   
-lemma Blog_Constraint [reuse, use_induction]:
-  " (All B blog1 blog2 D Did ltpkD #i #j.
-       ( Add_to_Blog(B, blog1, <D, Did, ltpkD, 'Revoked'> ) @ #i
-      & Add_to_Blog(B, blog2, < D, Did, ltpkD, 'Valid'>) @ #j 
-       )
-      ==>
-      (  #j < #i
-        // & (Ex rest.  rest + blog2 = blog1)
-      )
-    )
-   "
+lemma Issue_before_Check [reuse, use_induction]:
+  "All CertID #j. Cert_Accepted(CertID) @ j ==> (Ex #i. Cert_Issued(CertID) @ i & i < j)"
+
+//lemma Check_before_Revoke [reuse, use_induction]:
+//  "All CertID #i #j. Cert_Revoked(CertID) @ j & Cert_Accepted(CertID) @ i ==> #i < #j"
+
 /* Security property 1.
    Adversary need to compromise at least k CAs to get an invalid cert issued 
    on the blockchain log.
@@ -538,12 +607,12 @@ lemma Blog_Constraint [reuse, use_induction]:
 #ifdef secure1
 lemma valid_cert_issued_less_than_k_CAs_compromised:
  "
- All D Did ltpkD ltkD Sigs #i1 #i6.
+ All D Did ltpkD ltkD #i1.// #i6.
 
    /* If a domain has its cert successfully issued on the blockchain
    */
 
-    (Accept(D, Did, ltpkD, Sigs) @ #i1
+    (Accept_Cert(D, Did, ltpkD) @ #i1
 
 /* and less than k CAs have been compromised */
    &   not (Ex #i2 Compromised_CA_List.
@@ -556,7 +625,7 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
    &   not (Ex #i4.
                 Compromise_Domain(D,ltkD) @ #i4)
 
-   &   Accept_Cert(D, Did, ltpkD) @ #i6
+//   &   Accept_Cert(D, Did, ltpkD) @ #i6
    &  ltpkD = pk(ltkD)
       )
       ==>
@@ -573,12 +642,12 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
   */
 lemma valid_cert_revoke_less_than_t_CAs_compromised[use_induction]:
  "
- All D Did ltpkD Sigs #i1.// #i4.
+ All CertID #i1.// #i4.
 
    /* If a domain's cert is successfully revoked on the blockchain
    */
 
-    (Accept_Revoke(D, Did, ltpkD, Sigs ) @ #i1
+    (Cert_Revoked(CertID) @ #i1
 
 /* and less than t CAs have been compromised */
    &   not (Ex #i2 Compromised_CA_List.
@@ -587,12 +656,11 @@ lemma valid_cert_revoke_less_than_t_CAs_compromised[use_induction]:
 /* and BLM is not compromised */
    &   not (Ex #i3 B ltkB.
                 Compromise_BLM(B,ltkB) @ #i3)
-//   &  not (Ex #i4.
-//       Accept_Cert(D, Did, ltpkD) @ #i4 )
       )
       ==>
       ( /* the public key cannot be accepted anymore */
-      not (Ex #i4. (Accept_Cert(D, Did, ltpkD) @ #i4   & i1 < i4))
+      not (Ex #i4. (Cert_Accepted(CertID) @ #i4   & i1 < i4))
+//        (Ex #i4. (Not_Accept_Cert(D, Did, ltpkD) @ #i4   & i1 < i4))
       // i4 < i1
       )
  "
@@ -652,12 +720,12 @@ lemma valid_cert_update_domain_not_compromised:
 lemma protocol_correctness_issue:
  exists-trace
  " /* It is possible that */
-   Ex D Did ltkD Sigs #i1.
+   Ex D Did ltpkD #i1.
 
    /* The domain has its cert issued to the blockchain log
    */
 
-   Accept(D, Did, ltkD, Sigs ) @ #i1
+   Accept_Cert(D, Did, ltpkD) @ #i1
 
      /* without the adversary compromising any party. */
    &   not (Ex #i2 CA ltkCA.
@@ -694,5 +762,56 @@ lemma protocol_correctness_revoke:
    &   ltpkD = pk(ltkD)
 "
 #endif
+
+#ifdef secure4
+lemma message_secrecy_no_compromised_party:
+ "
+ All D Did m ltpkD #i1.
+
+   /* If a user received a confirmation, i.e. hashed secret the user
+   has sent, from the network */
+
+   (Com_Done(D, Did, m, ltpkD) @ #i1
+
+/* and no party has been compromised */
+   &   not (Ex #i2 CA ltkCA.
+                Compromise_CA(CA,ltkCA) @ #i2)
+
+   &   not (Ex #i3 B ltkB.
+                Compromise_BLM(B,ltkB) @ #i3)
+   &   not (Ex #i5 D ltkD.
+                Compromise_Domain(D,ltkD) @ #i5)
+
+      )
+      ==>
+      ( /* then the adversary cannot know m */
+       not (Ex #i4. K(m) @ #i4)
+      )
+ "
+#endif
+
+// lemma message_secrecy_compromise_all_domain_verified_master_cert:
+//  "
+//  All D Did m ltpkD #i1.
+// 
+//    /* If a user received a confirmation, i.e. hashed secret the user
+//    has sent, from the network */
+// 
+//    (Com_Done(D, Did, m, ltpkD) @ #i1
+// 
+// /* and at an earlier time, the domain server has verified his master
+// certificate */
+// 
+//      & Ex #i2.
+//      VerifiedMasterCert(D, Did, rgx, ltpkD) @ #i2 &
+//         #i2 < #i1
+// /* and all parties can be compromised*/
+//       )
+//       ==>
+//       ( /* then the adversary cannot know m */
+//        not (Ex #i3. K(m) @ #i3)
+//       )
+//  "
+
 
 end
