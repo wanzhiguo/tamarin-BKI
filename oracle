@@ -22,18 +22,20 @@ l17 = []
 lemma = sys.argv[1]
 for line in lines:
     num = line.split(':')[0]
-    if "D Did ltpkD CertID" in line:
+    if "!PubParams" in line:
         l1.append(num)
-    elif "(l = m)" in line:
+    elif "!KU( ~ltkCA" in line:
         l2.append(num)
-    elif "!Pk( $B" in line:
+    elif "!KU( ~ltkD" in line:
         l3.append(num)
-    elif "!Ltk( $B" in line:
+    elif "F_Compromised_CAs" in line:
         l4.append(num)
-    elif "Domain_Cert" in line:
+    elif "!KU( sign(<'DomainCert'" in line:
         l5.append(num)
-    else:
+    elif "F_Sigs_Check_List" in line:
         l6.append(num)
-ranked = l1 + l2 + l3 + l4 + l5 + l6
+    else:
+        l7.append(num)
+ranked = l1 + l2 + l3 + l4 + l5 + l6 + l7
 for i in ranked:
     print i
