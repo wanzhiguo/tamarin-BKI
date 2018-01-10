@@ -102,9 +102,9 @@ restriction subseteq_check_succeed:
 /* Initialize the whole system */
 rule INIT_SYSTEM_PARAMS:
    let 
-        n = '1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
-        k = '1'+'1'		// k out of n CAs required to issue a cert.
-        t = '1'				// t CAs to revoke a cert.
+        n = '1'+'1'+'1'+'1'+'1'		// n CAs in total. it can be set to any for test purpose.
+        k = '1'+'1'+'1'		// k out of n CAs required to issue a cert.
+        t = '1'+'1'				// t CAs to revoke a cert.
 	Init = <'INITSYS', n, k, t>		// n,k,t can be decided by adversary.
    in
     [ In(Init) ]
@@ -313,7 +313,8 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     in
     [
     Fr(~CertID),		// 1.7
-    In(ltpkD),
+//    In(ltpkD),
+    !Pk($D, ltpkD),
     !PubParams(n,k,t),
     F_Sigs_Check_List($D, Did, ltpkD, Sigs_Checked),
     !Ltk($B, ltkB),
@@ -321,17 +322,18 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     ]
   --[
     Eq(k+'nil', Sigs_Checked),			// All sigs have been checked.
+    Uniq(~CertID),
     Uniq(<'IssueCert',$D, Did, ltpkD>),
     Is_Type('BLM', $B),
     Is_Type('Domain', $D),
     NotIn(record, blog),
     NotIn(record_revoke, blog),			// 1.4 
 //    Issue_Cert($B, blog, record),		
-    Cert_Issued(~CertID)
+    Cert_Issued(~CertID, $D, Did, ltpkD)
     ]->
     [
     Out(cert_domain),
-    Domain_Cert(~CertID, cert_domain),		// Domain's cert
+    Domain_Cert(~CertID, $D, Did, ltpkD, cert_domain),		// Domain's cert
     L_Blog($B, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
 
@@ -404,7 +406,7 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
      [
      !PubParams(n,k,t),
      Fr(~RevokeID),
-     Domain_Cert(CertID, cert_domain),
+     Domain_Cert(CertID, $D, Did, ltpkD, cert_domain),
      F_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
      !Ltk($B, ltkB),
      L_Blog($B, blog) // Initially blog contains only 'nil'
@@ -417,10 +419,10 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
      NotIn(record_revoke, blog),
 //     Revoke_Cert($B, blog, record_revoke),	
      Uniq(<'RevokeCert',$D, Did, ltpkD>),
-     Cert_Revoked(CertID)
+     Cert_Revoked(CertID, $D, Did, ltpkD)
      ]->
      [
-     Domain_Cert_Revoke(~RevokeID, cert_domain_revoke),
+     Domain_Cert_Revoke(~RevokeID, $D, Did, ltpkD, cert_domain_revoke),
      Out(cert_domain_revoke),
      L_Blog($B, blog + record_revoke) // Recorded on the BLM's log, ie. the blockchain
      ]
@@ -493,7 +495,7 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
          !Pk($D, ltpkD),
          !DomainInfo($D, Did),
          !Pk($B, ltpkB),
-         Domain_Cert(CertID, cert_domain),
+         Domain_Cert(CertID, $D, Did, ltpkD, cert_domain),
          L_Blog($B, blog)
       ]
      --[
@@ -502,12 +504,12 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
       IsIn(record, blog),		
       Eq(verify(cert_domain, record, ltpkB), true),
       NotIn(record_revoke, blog),
-      Cert_Accepted(CertID),			// 1.7
+      Cert_Accepted(CertID, $D, Did, ltpkD),			// 1.7
       Accept_Cert($D, Did, ltpkD, CertID)
       ]->
       [ 
          Valid_Cert($D, Did, ltpkD),		// 1.6
-         Domain_Cert(CertID, cert_domain),
+         Domain_Cert(CertID, $D, Did, ltpkD, cert_domain),
          L_Blog($B, blog)
        ]
    
@@ -596,12 +598,6 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
 //     BLM_Log($D, Did, 'Valid')
 //    ]
   
-lemma Issue_before_Check [reuse, use_induction]:
-  "All CertID #j. Cert_Accepted(CertID) @ j ==> (Ex #i. Cert_Issued(CertID) @ i & i < j)"
-
-lemma Check_before_Revoke [reuse, use_induction]:
-  "All CertID #i #j. Cert_Revoked(CertID) @ j & Cert_Accepted(CertID) @ i ==> #i < #j"
-
 /* Security property 1.
    Adversary need to compromise at least k CAs to get an invalid cert issued 
    on the blockchain log.
@@ -642,14 +638,22 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:
    Adversary need to compromise at least t CAs to get an invalid cert revoked
    on the blockchain log.
   */
+lemma Issue_before_Check [reuse, use_induction]:
+  "All D Did ltpkD CertID #j. Cert_Accepted(CertID, D, Did, ltpkD) @ j 
+	==> (Ex #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
+
+lemma Check_before_Revoke [reuse, use_induction]:
+  "All D Did ltpkD CertID #i #j. Cert_Revoked(CertID, D, Did, ltpkD) @ j & 
+	Cert_Accepted(CertID, D, Did, ltpkD) @ i ==> #i < #j"
+
 lemma valid_cert_revoke_less_than_t_CAs_compromised[use_induction]:
  "
- All CertID #i1.// #i4.
+ All D Did ltpkD CertID #i1.// #i4.
 
    /* If a domain's cert is successfully revoked on the blockchain
    */
 
-    (Cert_Revoked(CertID) @ #i1
+    (Cert_Revoked(CertID, D, Did, ltpkD) @ #i1
 
 /* and less than t CAs have been compromised */
    &   not (Ex #i2 Compromised_CA_List.
@@ -661,7 +665,7 @@ lemma valid_cert_revoke_less_than_t_CAs_compromised[use_induction]:
       )
       ==>
       ( /* the public key cannot be accepted anymore */
-      not (Ex #i4. (Cert_Accepted(CertID) @ #i4   & i1 < i4))
+      not (Ex #i4. (Cert_Accepted(CertID, D, Did, ltpkD) @ #i4   & i1 < i4))
       // i4 < i1
       )
  "
