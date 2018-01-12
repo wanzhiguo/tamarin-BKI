@@ -101,10 +101,10 @@ restriction subseteq_check_succeed:
 rule ChanOut_S:
     [ Out_S($A,$B,x) ]
   --[ ChanOut_S($A,$B,x) ]->
-    [ !Sec($A,$B,x) ]
+    [ Sec($A,$B,x) ]
 
 rule ChanIn_S:
-    [ !Sec($A,$B,x) ]
+    [ Sec($A,$B,x) ]
   --[ ChanIn_S($A,$B,x) ]->
     [ In_S($A,$B,x) ]
 
@@ -329,17 +329,16 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
     ]
   --[
     Eq(k+'nil', Sigs_Checked),			// All sigs have been checked.
-//    Uniq(~CertID),
     Uniq(<'IssueCert',$D, Did, ltpkD>),
     Is_Type('BLM', $B),
 //    Is_Type('Domain', $D),
     NotIn(record, blog),
-    NotIn(record_revoke, blog),			// 1.4 
-//    Issue_Cert($B, blog, record),		
+    NotIn(record_revoke, blog),			
     Cert_Issued(~CertID, $D, Did, ltpkD)
     ]->
     [
     Out(cert_domain),
+    !CertInfo(~CertID, $D, Did, ltpkD, cert_domain),
     Domain_Cert(~CertID, $D, Did, ltpkD, cert_domain),		// Domain's cert
     L_Blog($B, blog + record) 		// Recorded on the BLM's log, ie. the blockchain
     ]
@@ -352,16 +351,15 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
       [
        !Pk($D, ltpkD),
        !Ltk($D, ltkD),				// This allows only domain to issue the request
-//       Domain_Cert(CertID, $D, Did, ltpkD, cert_domain),		//  1.11
-//       Fr(~RevID),
+       !CertInfo(CertID, $D, Did, ltpkD, cert_domain),		// Domain knows its cert
        !DomainInfo($D, Did)
       ]
    --[
+      Revoke_Requested(CertID, $D, Did, ltpkD),			
       Is_Type('Domain', $D)
-//      Revoke_Requested(~RevID, $D, Did, ltpkD)			// 1.11
       ]->
      [
-//      Domain_Cert(CertID, $D, Did, ltpkD, cert_domain),		// 1.11
+      Issued_Cert(CertID, $D, Did, ltpkD, cert_domain),
       Out_S($D, $CA, request)     		//  request is sent via secure channel
      ]
  
@@ -370,8 +368,8 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
       This is done offline, or a secure out-of-band channel. 
       */
  rule CA_GENERATE_REVOKE_SIG_1:
-   let request= <'RevokeCert', $D, Did, ltpkD>		// 1.11
-       Sig = sign( <'RevokeCert', $D, Did, ltpkD>, ltkCA)	// 1.11
+   let request= <'RevokeCert', $D, Did, ltpkD>		
+       Sig = sign( <'RevokeCert', $D, Did, ltpkD>, ltkCA)	
    in
       [
        In_S($D, $CA, request),			// Send_Request 
@@ -385,7 +383,6 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
       Uniq(<'ObtainRevokeSig', $D, Did, $CA>)		// A CA only provides a single signature
       ]->
      [
-//      Out(RevID),		// 1.11
       Out(<$CA, $D, Sig>)     // Obtain a signature from CA--Need t Sigs to revoke a certificate.
      ]
    
@@ -396,7 +393,6 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
     In(Sig),			// This one can be forged by malicious CAs
     In(ltpkD),
     In(Did),
-//    In(RevID),			// 1.11
     F_Sigs_Revoke_Check_List($D, Did, ltpkD, Sigs_Checked),
     !Pk($CA, ltpkCA)
     ]
@@ -637,9 +633,14 @@ lemma Issue_before_Check [reuse, use_induction]:
   "All D Did ltpkD CertID #j. Cert_Accepted(CertID, D, Did, ltpkD) @ j 
 	==> (Ex #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
 
+
 lemma Check_before_Revoke [reuse, use_induction]:
   "All D Did ltpkD CertID #i #j. Cert_Revoked(CertID, D, Did, ltpkD) @ j & 
 	Cert_Accepted(CertID, D, Did, ltpkD) @ i ==> #i < #j"
+
+lemma Issue_before_Request_Revoke [reuse, use_induction]:
+  "All D Did ltpkD CertID #j. Revoke_Requested(CertID, D, Did, ltpkD) @ j 
+	==> (Ex CertID #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
 
 lemma valid_cert_revoke_less_than_t_CAs_compromised[use_induction]:
  "
@@ -665,33 +666,68 @@ lemma valid_cert_revoke_less_than_t_CAs_compromised[use_induction]:
       // i4 < i1
       )
  "
+#endif
+
+#ifdef secure3
+  rule COMPROMISE_LESS_T_CA2:
+   [ !Ltk($CA, ltkCA),
+     !PubParams(n,k,t),
+     F_Compromised_CAs(CAList, Compromised_CA_List)
+    ]
+  --[
+     Is_Type('CA', $CA),
+     IsIn(Compromised_CA_List, t+'nil'),			// less k CAs are compromised
+     Uniq(<'Compromise_CA', $CA>),
+     Compromise_T_CAs(CAList, Compromised_CA_List+'1')
+     ]->
+  [
+   F_Compromised_CAs(CAList, Compromised_CA_List+'1'),
+   Out(ltkCA)
+  ]
+
+lemma Issue_before_Check2 [reuse, use_induction]:
+  "All D Did ltpkD CertID #j. Cert_Accepted(CertID, D, Did, ltpkD) @ j 
+	==> (Ex #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
+
+
+//lemma Check_before_Revoke2 [reuse, use_induction]:
+//  "All D Did ltpkD CertID #i #j. Cert_Revoked(CertID, D, Did, ltpkD) @ j & 
+//	Cert_Accepted(CertID, D, Did, ltpkD) @ i ==> #i < #j"
+
+//lemma Issue_before_Request_Revoke2 [reuse, use_induction]:
+//  "All D Did ltpkD CertID #j. Revoke_Requested(CertID, D, Did, ltpkD) @ j 
+//	==> (Ex CertID #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
 
 lemma invalid_cert_revoke_less_than_t_CAs_compromised:
    /* A domain's cert cannot be revoked illegally by an adversary 
      if there is no more than t CAs are compromised
     */
-   "All CertID D Did ltpkD #i1.
+   "All CertID D Did ltpkD ltkD n k t #i0 #i1.
      (Cert_Revoked(CertID, D, Did, ltpkD) @ #i1
+  & Init_Sys(n, k, t) @ #i0 
     // and no more than t CAs are compromised
    &   not (Ex CAList #i2.
                 Compromise_T_CAs(CAList, t+'nil') @ #i2)
 /* and BLM is not compromised */
    &   not (Ex #i3 B ltkB.
                 Compromise_BLM(B,ltkB) @ #i3)
+   &   not (Ex #i4.
+                Compromise_Domain(D,ltkD) @ #i4)
+   &   ltpkD = pk(ltkD)
      )
      ==>
      // The revocation is invoked by the domain itself.
      ( 
-     Ex #i4. Revoke_Requested(CertID, $D, Did, ltpkD) @ #i4 
-       & #i4 < #i1
+     Ex #i5. Revoke_Requested(CertID, D, Did, ltpkD) @ #i5 
+       & #i5 < #i1
       )
    "
 
 #endif
 
-#ifdef secure3
+#ifdef secure4
 
-/* Security property 3.
+/* Security property 4.
    Adversary need to compromise domain's private key to get an invalid cert updated
    on the blockchain log.
   */
@@ -764,7 +800,7 @@ lemma protocol_correctness_revoke:
 "
 #endif
 
-#ifdef secure4
+#ifdef secure5
 lemma message_secrecy_no_compromised_party:
  "
  All D Did m ltpkD #i1.

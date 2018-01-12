@@ -13,15 +13,21 @@ theory Minimal_Loop_Example begin
 */
 builtins: multiset
 
-rule Start: [ Fr(x), Fr(D) ] --[ Start(x,D) ]-> [ A( x,D) ]
+rule Start: [ Fr(x), Fr(D) ] --[ Start(x,D) ]-> [ A( x,D), B(x,D) ]
 
 rule Loop:  [ A( x,D) ]  --[ Loop(x, D)  ]-> [ A( x,D+'1') ]
 
+rule Loop2:  [ B( x,D) ]  --[ Loop2(x, D)  ]-> [ B( x,D) ]
+
 rule Stop:  [ A( x,D) ]  --[ Stop(x, D)  ]-> [ ]
+rule Stop2:  [ B( x,D) ]  --[ Stop2(x, D)  ]-> [ ]
 
 lemma Start_before_Loop [reuse, use_induction]:
   "All x D #j. Loop(x,D ) @ j ==> (Ex D2 #i. Start(x,D2) @ i & i < j)"
-//
+
+lemma Start_before_Loop2 [reuse, use_induction]:
+  "All x D #j. Loop2(x,D ) @ j ==> (Ex D2 #i. Start(x,D2) @ i & i < j)"
+
 //lemma Start_before_Stop:
 //  "All x #j. Stop(x) @ j ==> (Ex #i. Start(x) @ i & i < j)"
 

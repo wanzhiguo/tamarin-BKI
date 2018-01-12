@@ -24,34 +24,34 @@ for line in lines:
     num = line.split(':')[0]
     if "D Did ltpkD CertID" in line:
         l1.append(num)
-    elif "!Pk( $B" in line:		##  for auxiliary lemma
-        l2.append(num)
-#    elif "(last(#j)" in line:		##  for auxiliary lemma
-#        l3.append(num)
-    elif "!Ltk( $B" in line:
-        l4.append(num)
-    elif "D Did ltpkD ltkD CertID" in line:
-        l5.append(num)
-    elif "!KU( sign(<'DomainCert'" in line:
-        l6.append(num)
     elif "!PubParams" in line:
-        l7.append(num)
+        l2.append(num)
     elif "(l = m)" in line:
+        l3.append(num)
+    elif "!Pk( $B" in line:
+        l4.append(num)
+    elif "F_Sigs_Revoke_Check_List" in line:
+        l5.append(num)
+    elif "!Ltk( $B" in line:
+        l6.append(num)
+    elif re.search("F_Compromised_CAs(.+'1' )", line):
+        l7.append(num)
+    elif "!KU( ~ltk" in line:
         l8.append(num)
-    elif "!KU( ~ltkCA" in line:
+    elif re.search("F_Compromised_CAs", line):
         l9.append(num)
-    elif "!KU( ~ltkD" in line:
+    elif "!KU( sign(<'RevokeCert'" in line:
         l10.append(num)
-    elif "F_Compromised_CAs( '1' )" in line:
+    elif "!KU( sign" in line:
         l11.append(num)
-    elif "F_Compromised_CAs" in line:
+    elif "Domain_Cert(" in line:
         l12.append(num)
     elif "F_Sigs_Check_List" in line:
         l13.append(num)
-    elif "Domain_Cert(" in line:
-        l14.append(num)
+#    elif "F_Sigs_Check_List" in line:
+#        l13.append(num)
     else:
-        l15.append(num)
-ranked = l1 + l2 + l3 + l4 + l5 + l6 + l7 + l8 + l9 + l10 + l11 + l12 + l13 + l14 + l15
+        l14.append(num)
+ranked = l1 + l2 + l3 + l4 + l5 + l6 + l7 + l8 + l9 + l10 + l11 + l12 + l13 + l14
 for i in ranked:
     print i
