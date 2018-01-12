@@ -200,7 +200,8 @@ rule INIT_DOMAIN:
     Out(~Did),
     Out(pk(~ltkD))
     ]
-// for malicious CAs
+
+/* for malicious CAs */
 rule INIT_LISTS:
    [
     In($D),
@@ -445,46 +446,6 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
        ]
    
 
-// /* Update certificate by Domain itself.*/
-// rule DOMAIN_UPDATE_CERT_0:
-//      let 
-// 	Sig = sign( <'UpdateCert', $D, pk(~newltkD), ltpkD>, ltkD)
-//      in
-//      [
-//       !Ltk($D, ltkD),
-//       !Pk($D, ltpkD),
-//       Fr(~newltkD)
-//      ]
-//   --[
-//      Is_Type('Domain', $D)
-//      ]->
-//     [
-//      Out(<$D, pk(~newltkD), ltpkD, Sig>)
-//     ]
-
-
-  /* 
-     */
-//rule BLM_UPDATE_CERT_1:
-//  let 
-//       request = <$D, newltpkD, ltpkD, Sig>
-//       record_update = < $D, Did, ltpkD, 'Valid' >
-//  in
-//     [
-//      In(request),
-//      !Ltk($B, ltkB),			// Must have private key to sign the request.
-//      BLM_Log($D, Did, 'Valid')
-//     ]
-//  --[
-//     Is_Type('Domain', $D),
-//     Uniq(<'UpdateCert', $D, Did, ltpkD>),	// 
-//     Eq(verify(Sig, <'UpdateCert', $D, newltpkD, ltpkD>, ltpkD), true ),
-//     Is_Type('BLM', $B),
-//     Accept_Update($D, Did, newltpkD, ltpkD)
-//     ]->
-//    [
-//     BLM_Log($D, Did, 'Valid')
-//    ]
   
 /* Security property 1.
    Adversary need to compromise at least k CAs to get an invalid cert issued 

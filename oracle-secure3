@@ -30,21 +30,21 @@ for line in lines:
         l3.append(num)
     elif "!Pk( $B" in line:
         l4.append(num)
-    elif "F_Sigs_Revoke_Check_List" in line:
-        l5.append(num)
     elif "!Ltk( $B" in line:
+        l5.append(num)
+    elif "!KU( ~ltk" in line:
         l6.append(num)
     elif re.search("F_Compromised_CAs(.+'1' )", line):
         l7.append(num)
-    elif "!KU( ~ltk" in line:
+    elif "F_Sigs_Revoke_Check_List" in line:
         l8.append(num)
-    elif re.search("F_Compromised_CAs", line):
-        l9.append(num)
     elif "!KU( sign(<'RevokeCert'" in line:
-        l10.append(num)
-    elif "!KU( sign" in line:
-        l11.append(num)
+        l9.append(num)
     elif "Domain_Cert(" in line:
+        l10.append(num)
+    elif re.search("F_Compromised_CAs", line):
+        l11.append(num)
+    elif "!KU( sign" in line:
         l12.append(num)
     elif "F_Sigs_Check_List" in line:
         l13.append(num)
