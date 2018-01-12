@@ -1,0 +1,139 @@
+3-2-1:
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Check (all-traces): verified (16 steps)
+  Check_before_Revoke (all-traces): verified (1677 steps)
+secure2:  valid_cert_revoke_less_than_t_CAs_compromised (all-traces): verified (4 steps)
+
+3-2-1
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Check (all-traces): verified (18 steps)
+  Check_before_Revoke (all-traces): verified (1749 steps)
+  valid_cert_issued_less_than_k_CAs_compromised (all-traces): verified (35 steps)
+  valid_cert_revoke_less_than_t_CAs_compromised (all-traces): verified (4 steps)
+
+3-2-1: secure1:
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Accept (all-traces): verified (15 steps)
+  valid_cert_issued_less_than_k_CAs_compromised (all-traces): verified (92 steps)
+
+==============================================================================
+
+
+5-3-2: secure1:
+After adding secure channels, same as non-secure channels:
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  CAList_Contain_Nil (all-traces): verified (25 steps)
+  Issue_before_Accept (all-traces): verified (17 steps)
+  valid_cert_issued_less_than_k_CAs_compromised (all-traces): verified (2025 steps)
+
+==============================================================================
+
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Accept (all-traces): verified (17 steps)
+  valid_cert_issued_less_than_k_CAs_compromised (all-traces): verified (4060 steps)
+
+==============================================================================
+After adding an axuiliary lemma:
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  CAList_Contain_Nil (all-traces): verified (25 steps)
+  Issue_before_Accept (all-traces): verified (17 steps)
+  valid_cert_issued_less_than_k_CAs_compromised (all-traces): verified (2025 steps)
+
+==============================================================================
+
+5-3-2: secure2:
+After adding secure channels, same as none-secure channels:
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Check (all-traces): verified (16 steps)
+  Check_before_Revoke (all-traces): verified (23 steps)
+  valid_cert_revoke_less_than_t_CAs_compromised (all-traces): verified (4 steps)
+
+==============================================================================
+
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Accept (all-traces): verified (16 steps)
+  Issue_before_Check (all-traces): verified (4 steps)
+  Check_before_Revoke (all-traces): verified (23 steps)
+  valid_cert_revoke_less_than_t_CAs_compromised (all-traces): verified (4 steps)
+
+==============================================================================
+5-3-2: secure3:
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Check2 (all-traces): verified (16 steps)
+  Issue_before_Request_Revoke2 (all-traces): verified (16 steps)
+  invalid_cert_revoke_less_than_t_CAs_compromised (all-traces): verified (10389 steps)
+
+==============================================================================
+
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Check2 (all-traces): verified (16 steps)
+  Check_before_Revoke2 (all-traces): verified (39079 steps)
+  Issue_before_Request_Revoke2 (all-traces): verified (16 steps)
+  invalid_cert_revoke_less_than_t_CAs_compromised (all-traces): verified (10428 steps)
+
+==============================================================================
+
+
+0-0-0: secure2:
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  Issue_before_Accept (all-traces): verified (25 steps)
+  Issue_before_Check (all-traces): verified (4 steps)
+  Check_before_Revoke (all-traces): verified (41 steps)
+  valid_cert_revoke_less_than_t_CAs_compromised (all-traces): verified (4 steps)
+
+==============================================================================
+
+6-3-2: secure1:
+==============================================================================
+summary of summaries:
+
+analyzed: BKI-proof.spthy
+
+  CAList_Contain_Nil (all-traces): verified (25 steps)
+  Issue_before_Accept (all-traces): verified (18 steps)
+  valid_cert_issued_less_than_k_CAs_compromised (all-traces): verified (4223 steps)
+
+==============================================================================
+
