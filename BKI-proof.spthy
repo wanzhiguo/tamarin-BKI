@@ -6,8 +6,11 @@
    5. BKI security can be proved under different n, k and t. E.g. n = '1'+'1'+'1', k = '1'+'1', t ='1'. 
 
 To run the proof:
-   tamarin-prover --prove BKI-proof.spthy -Dsecure1 
-   tamarin-prover --prove BKI-proof.spthy --heuristic=o -Dsecure2 
+   tamarin-prover --prove BKI-proof.spthy -Dsecure1 --heuristic=o 
+   tamarin-prover --prove BKI-proof.spthy -Dsecure2 --heuristic=o 
+   tamarin-prover --prove BKI-proof.spthy -Dsecure3 --heuristic=o 
+
+Note: They use different oracles in the proof.
 */
 
 
@@ -126,14 +129,13 @@ rule INIT_SYSTEM_PARAMS:
         Init_Compromise_List(~CAList, 'nil'),
 	Uniq('INITSYS')]->
     [!PubParams(n, k, t),
-     F_Compromised_CAs(~CAList, 'nil'),		// 1.11 CAList for injective contradiction 
+     F_Compromised_CAs(~CAList, 'nil'),		// CAList for injective contradiction 
       Out(<n, k, t>)]
 
 /*Initialisation: Certificate log maintainer BLM. */
 
 rule INIT_BLM:
     [ Fr(~ltkB)
-//      Fr(~blogid)
       ]		
   --[ Is_Type('BLM', $B),
       Init_Blog($B, 'nil'),
@@ -168,40 +170,12 @@ rule INIT_BLM:
     Out(pk(~ltkCA))
   ]
 
-
-  
-//  /* Compromise k CAs */
-//  rule COMPROMISE_k_CAs:
-//    [
-//   !PubParams(n,k,t),
-//   F_Compromised_CAs(Compromised_CA_List)
-//    ]
-//   --[
-//   SubsetEq(k+'nil', Compromised_CA_List),			// k CAs are compromised
-//   K_CAs_Compromised(Compromised_CA_List)
-//    ]->[
-//   F_Compromised_CAs(Compromised_CA_List)
-//    ]
-//  
-//   /* Compromise t CAs */
-//   rule COMPROMISE_t_CAs:
-//     [
-//    !PubParams(n,k,t),
-//    F_Compromised_CAs(Compromised_CA_List)
-//     ]
-//    --[
-//    SubsetEq(t+'nil', Compromised_CA_List),
-//    T_CAs_Compromised(Compromised_CA_List)
-//     ]->[
-//    F_Compromised_CAs(Compromised_CA_List)
-//     ]
-
   /* Compromise a BLM.
      BLM is modeled as a trusted pary, to represent the blockchain maintainer.
     */
   rule COMPROMISE_BLM:
-          [ !Ltk($B, ltkB)
-          ]
+     [ !Ltk($B, ltkB)
+     ]
   --[
      Is_Type('BLM', $B),
      Compromise_BLM($B,ltkB)
@@ -319,7 +293,7 @@ rule BLM_ISSUE_CERT_3: // Issued by BLM. ltpkD is obtained from In().
        cert_domain = sign(record, ltkB)
     in
     [
-    Fr(~CertID),		// 1.7
+    Fr(~CertID),				// This is for injective contradiction	
     In(ltpkD),
 //    !Pk($D, ltpkD),
     !PubParams(n,k,t),
@@ -426,9 +400,8 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
      Eq(t+'nil', Sigs_Checked),		// All sigs have been checked.
      Is_Type('BLM', $B),
      Is_Type('Domain',$D),
-     IsIn(record, blog),		// 1.6
+     IsIn(record, blog),		
      NotIn(record_revoke, blog),
-//     Revoke_Cert($B, blog, record_revoke),	
      Uniq(<'RevokeCert',$D, Did, ltpkD>),
      Cert_Revoked(CertID, $D, Did, ltpkD)
      ]->
@@ -462,37 +435,15 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
       IsIn(record, blog),		
       Eq(verify(cert_domain, record, ltpkB), true),
       NotIn(record_revoke, blog),
-      Cert_Accepted(CertID, $D, Did, ltpkD),			// 1.7
+      Cert_Accepted(CertID, $D, Did, ltpkD),		
       Accept_Cert(CertID, $D, Did, ltpkD)
       ]->
       [ 
-         Valid_Cert($D, Did, ltpkD),		// 1.6
+         Valid_Cert($D, Did, ltpkD),		
          Domain_Cert(CertID, $D, Did, ltpkD, cert_domain),
          L_Blog($B, blog)
        ]
    
-// rule INVALID_CERT_CHECK:
-//      let
-//          record_revoke = < $D, Did, ltpkD, 'Revoked' >
-//      in
-//      [ 
-//         In(<$D, Did, ltpkD>),
-//         !Pk($B, ltpkB),
-//         Domain_Cert_Revoke(RevokeID, cert_domain_revoke),
-//         L_Blog($B, blog)
-//      ]
-//     --[
-//      Is_Type('BLM', $B),
-//      Is_Type('Domain', $D),
-//      IsIn(record_revoke, blog),		
-//      Eq(verify(cert_domain_revoke, record_revoke, ltpkB), true),
-//      Cert_Rejected(RevokeID)
-//      ]->
-//      [ 
-//         Domain_Cert_Revoke(RevokeID, cert_domain_revoke),
-//         L_Blog($B, blog)
-//       ]
-
 
 // /* Update certificate by Domain itself.*/
 // rule DOMAIN_UPDATE_CERT_0:
@@ -544,7 +495,8 @@ rule BLM_CHECK_CERT_REVOKE_REQUEST_2:
 
 #ifdef secure1
 
-  /* Compromise a CA */
+  /* Compromise k CA, this rule is only used for proving the following lemma,
+     security for certificate issuance */
 
   rule COMPROMISE_LESS_K_CA:
    [ !Ltk($CA, ltkCA),
@@ -568,18 +520,14 @@ lemma CAList_Contain_Nil [reuse, use_induction]:
       Compromise_K_CAs(CAList, Compromised_CA_List) @ i
      ==>  ( Ex rest. rest + 'nil' = Compromised_CA_List )
    "
-//// Test the following lemma
-//lemma Init_Sys_before_Compromise_List [reuse, use_induction]:
-//  "All CAList Compromised_CA_List #j. Compromise_K_CAs(CAList, Compromised_CA_List) @ j 
-//	==> (Ex #i. Init_Compromise_List(CAList, 'nil') @ i & i < j)"
 
 lemma Issue_before_Accept [reuse, use_induction]:
   "All D Did ltpkD CertID #j. Accept_Cert(CertID, D, Did, ltpkD) @ j 
 	==> (Ex #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
 
-lemma valid_cert_issued_less_than_k_CAs_compromised:// [use_induction]:
+lemma valid_cert_issued_less_than_k_CAs_compromised:
  "
- All D Did ltpkD ltkD CertID n k t #i1 #i0.// #i6.
+ All D Did ltpkD ltkD CertID n k t #i1 #i0.
 
    /* If a domain has its cert successfully issued on the blockchain
    */
@@ -613,6 +561,7 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:// [use_induction]:
    Adversary need to compromise at least t CAs to get an invalid cert revoked
    on the blockchain log.
   */
+  // This is the rule to compromise t CAs.
   rule COMPROMISE_LESS_T_CA:
    [ !Ltk($CA, ltkCA),
      !PubParams(n,k,t),
@@ -620,7 +569,7 @@ lemma valid_cert_issued_less_than_k_CAs_compromised:// [use_induction]:
     ]
   --[
      Is_Type('CA', $CA),
-     IsIn(Compromised_CA_List, t+'nil'),			// less k CAs are compromised
+     IsIn(Compromised_CA_List, t+'nil'),			// less than t CAs are compromised
      Uniq(<'Compromise_CA', $CA>),
      Compromise_T_CAs(CAList, Compromised_CA_List+'1')
      ]->
@@ -694,9 +643,9 @@ lemma Issue_before_Check2 [reuse, use_induction]:
 //  "All D Did ltpkD CertID #i #j. Cert_Revoked(CertID, D, Did, ltpkD) @ j & 
 //	Cert_Accepted(CertID, D, Did, ltpkD) @ i ==> #i < #j"
 
-//lemma Issue_before_Request_Revoke2 [reuse, use_induction]:
-//  "All D Did ltpkD CertID #j. Revoke_Requested(CertID, D, Did, ltpkD) @ j 
-//	==> (Ex CertID #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
+lemma Issue_before_Request_Revoke2 [reuse, use_induction]:
+  "All D Did ltpkD CertID #j. Revoke_Requested(CertID, D, Did, ltpkD) @ j 
+	==> (Ex CertID #i. Cert_Issued(CertID, D, Did, ltpkD) @ i & i < j)"
 
 lemma invalid_cert_revoke_less_than_t_CAs_compromised:
    /* A domain's cert cannot be revoked illegally by an adversary 
@@ -723,32 +672,6 @@ lemma invalid_cert_revoke_less_than_t_CAs_compromised:
       )
    "
 
-#endif
-
-#ifdef secure4
-
-/* Security property 4.
-   Adversary need to compromise domain's private key to get an invalid cert updated
-   on the blockchain log.
-  */
-lemma valid_cert_update_domain_not_compromised:
- "
- All D Did newltpkD newltkD ltpkD #i1.
- //All D Did newltpkD newltkD ltpkD ltkD #i1.
-
-   /* If a domain has its cert successfully updated on the blockchain */
-
-    (Accept_Update(D, Did, newltpkD, newltkD, ltpkD) @ #i1 
-
-/* and Domain is not compromised */
-   &   not (Ex #i2 D ltkD.
-                Compromise_Domain(D,ltkD) @ #i2)
-      )
-      ==>
-      ( /* the Domain must be a valid domain */
-       not (Ex #i4. KU(newltkD) @ #i4)
-      )
- "
 #endif
 
 
@@ -800,55 +723,6 @@ lemma protocol_correctness_revoke:
 "
 #endif
 
-#ifdef secure5
-lemma message_secrecy_no_compromised_party:
- "
- All D Did m ltpkD #i1.
-
-   /* If a user received a confirmation, i.e. hashed secret the user
-   has sent, from the network */
-
-   (Com_Done(D, Did, m, ltpkD) @ #i1
-
-/* and no party has been compromised */
-   &   not (Ex #i2 CA ltkCA.
-                Compromise_CA(CA,ltkCA) @ #i2)
-
-   &   not (Ex #i3 B ltkB.
-                Compromise_BLM(B,ltkB) @ #i3)
-   &   not (Ex #i5 D ltkD.
-                Compromise_Domain(D,ltkD) @ #i5)
-
-      )
-      ==>
-      ( /* then the adversary cannot know m */
-       not (Ex #i4. K(m) @ #i4)
-      )
- "
-#endif
-
-// lemma message_secrecy_compromise_all_domain_verified_master_cert:
-//  "
-//  All D Did m ltpkD #i1.
-// 
-//    /* If a user received a confirmation, i.e. hashed secret the user
-//    has sent, from the network */
-// 
-//    (Com_Done(D, Did, m, ltpkD) @ #i1
-// 
-// /* and at an earlier time, the domain server has verified his master
-// certificate */
-// 
-//      & Ex #i2.
-//      VerifiedMasterCert(D, Did, rgx, ltpkD) @ #i2 &
-//         #i2 < #i1
-// /* and all parties can be compromised*/
-//       )
-//       ==>
-//       ( /* then the adversary cannot know m */
-//        not (Ex #i3. K(m) @ #i3)
-//       )
-//  "
 
 
 end

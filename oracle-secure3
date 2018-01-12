@@ -38,13 +38,13 @@ for line in lines:
         l7.append(num)
     elif "!KU( ~ltk" in line:
         l8.append(num)
-    elif "Domain_Cert(" in line:
-        l9.append(num)
     elif re.search("F_Compromised_CAs", line):
-        l10.append(num)
+        l9.append(num)
     elif "!KU( sign(<'RevokeCert'" in line:
-        l11.append(num)
+        l10.append(num)
     elif "!KU( sign" in line:
+        l11.append(num)
+    elif "Domain_Cert(" in line:
         l12.append(num)
     elif "F_Sigs_Check_List" in line:
         l13.append(num)
